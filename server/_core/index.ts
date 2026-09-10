@@ -1,16 +1,7 @@
 import "dotenv/config";
-import express from "express";
 import { createServer } from "http";
 import net from "net";
-import { createExpressMiddleware } from "@trpc/server/adapters/express";
-import { registerOAuthRoutes } from "./oauth";
-import { registerStorageProxy } from "./storageProxy";
-import { appRouter } from "../routers";
-import { createContext } from "./context";
-import { getSessionUser } from "../auth";
-import { buildTrainingEvaluationPdf } from "../reportPdf";
-import { createThreeDayDueReminders } from "../dueReminders";
-import { sdk } from "./sdk";
+import app from "../app";
 import { serveStatic, setupVite } from "./vite";
 
 function isPortAvailable(port: number): Promise<boolean> {
@@ -33,50 +24,8 @@ async function findAvailablePort(startPort: number = 3000): Promise<number> {
 }
 
 async function startServer() {
-  const app = express();
   const server = createServer(app);
-  // Configure body parser with larger size limit for file uploads
-  app.use(express.json({ limit: "50mb" }));
-  app.use(express.urlencoded({ limit: "50mb", extended: true }));
-  registerStorageProxy(app);
-  registerOAuthRoutes(app);
-  app.get("/api/reports/training/:id.pdf", async (req, res) => {
-    try {
-      const user = await getSessionUser(req);
-      if (!user || user.role !== "ADMIN") return res.status(403).json({ error: "forbidden" });
-      const trainingId = Number(req.params.id);
-      if (!Number.isInteger(trainingId) || trainingId <= 0) return res.status(400).json({ error: "invalid-training-id" });
-      const pdf = await buildTrainingEvaluationPdf(trainingId);
-      res.setHeader("Content-Type", "application/pdf");
-      res.setHeader("Content-Disposition", `attachment; filename="degerlendirme-raporu-${trainingId}.pdf"`);
-      res.setHeader("Content-Length", pdf.length);
-      return res.send(pdf);
-    } catch (error) {
-      console.error("[Reports] PDF generation failed", error);
-      return res.status(500).json({ error: "report-generation-failed" });
-    }
-  });
-  app.post("/api/scheduled/due-reminders", async (req, res) => {
-    try {
-      const user = await sdk.authenticateRequest(req);
-      if (!user.isCron || !user.taskUid) return res.status(403).json({ error: "cron-only" });
-      const result = await createThreeDayDueReminders();
-      return res.json({ ok: true, ...result, taskUid: user.taskUid });
-    } catch (error) {
-      const detail = error instanceof Error ? error.message : String(error);
-      console.error("[Scheduled due-reminders] failed", error);
-      return res.status(500).json({ error: detail, context: { url: req.originalUrl }, timestamp: new Date().toISOString() });
-    }
-  });
-  // tRPC API
-  app.use(
-    "/api/trpc",
-    createExpressMiddleware({
-      router: appRouter,
-      createContext,
-    })
-  );
-  // development mode uses Vite, production mode uses static files
+
   if (process.env.NODE_ENV === "development") {
     await setupVite(app, server);
   } else {

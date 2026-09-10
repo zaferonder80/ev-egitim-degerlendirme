@@ -2,20 +2,12 @@ import "dotenv/config";
 import bcrypt from "bcryptjs";
 import { eq } from "drizzle-orm";
 import { assignments, criteria, evaluationResponses, evaluations, trainings, users } from "../drizzle/schema";
+import { DEFAULT_CRITERIA } from "./defaultCriteria";
 import { getDb } from "./db";
 import { DEFAULT_EVALUATOR_PASSWORD, defaultEvaluators } from "./defaultEvaluators";
 import { calculateEvaluationScores } from "./evaluationMath";
 
-const criterionSeed = [
-  ["Amaç ve hedeflerin netliği", "Eğitim künyesinin tam olması ve eğitimde açıklanması beklenir.", ["Eğitim adı, hedef kitle, süre ve öğrenme hedefleri mevcut mu?", "Amaç ve kazanımlar açık şekilde ifade edilmiş mi?", "Katılımcının eğitim sonunda ne kazanacağı net mi?"]],
-  ["İçeriğin doğruluğu, güncelliği ve hedef kitleye uygunluğu", "İçeriğin doğruluğu, güncelliği ve hedef kitleye uygunluğu değerlendirilir.", ["İçerik doğru mu?", "İçerik güncel mi?", "Hedef kitlenin bilgi ve deneyim seviyesine uygun mu?", "Kullanılan dil ve terminoloji uygun mu?"]],
-  ["İçeriğin farklı öğrenme stillerine uygunluğu", "İçeriğin işitsel, görsel ve etkileşimli öğrenme tercihlerini destekleme seviyesi değerlendirilir.", ["Görsel destekler yeterli mi?", "İşitsel içerikler uygun mu?", "Etkileşimli öğrenme unsurları var mı?", "Farklı öğrenme tercihleri dengeli biçimde destekleniyor mu?"]],
-  ["Eğitim içerik hiyerarşisinin uygunluğu", "İçeriğin basitten karmaşığa doğru tasarlanması beklenir.", ["İçerik basitten karmaşığa ilerliyor mu?", "Konular arasında mantıksal akış var mı?", "Başlık ve alt başlık yapısı anlaşılır mı?", "Bölümler arasındaki geçişler öğrenmeyi destekliyor mu?"]],
-  ["Eğitimde verilen örneklerin, alıştırmaların ve etkileşimlerin yeterliliği ve etkililiği", null, ["Örnekler gerçek iş yaşamıyla bağlantılı mı?", "Alıştırmalar öğrenmeyi pekiştiriyor mu?", "Etkileşimler katılımcıyı aktif tutuyor mu?", "Yeterli uygulama fırsatı bulunuyor mu?"]],
-  ["İçeriğin bilgi yoğunluğu ile toplam eğitim süresinin uygunluğu", "Uzun eğitimlerin micro-learning yaklaşımıyla bölümlenmesi dikkate alınır.", ["İçerik yoğunluğu ve süre dengeli mi?", "Bilişsel yük uygun seviyede mi?", "Uzun içerikler anlamlı küçük bölümlere ayrılmış mı?", "Micro-learning yaklaşımına uygun mu?"]],
-  ["Video, ses, montaj ve görsellerin kalitesi", null, ["Video görüntü kalitesi yeterli mi?", "Ses seviyesi ve ses temizliği uygun mu?", "Montaj profesyonel ve akıcı mı?", "Görseller anlaşılır ve kaliteli mi?", "Görsel tasarım dili tutarlı mı?", "Medya unsurları öğrenmeyi destekliyor mu?"]],
-  ["Ölçme ve değerlendirme aracının eğitim içeriğine ve hedef kitleye uygunluğu", null, ["Ölçme aracı öğrenme hedefleriyle uyumlu mu?", "Sorular eğitim içeriğini kapsıyor mu?", "Sorular hedef kitleye uygun mu?", "Yalnızca bilgiyi hatırlamayı değil, uygulamayı da ölçüyor mu?", "Katılımcıya anlamlı geri bildirim veriliyor mu?"]],
-] as const;
+const criterionSeed = DEFAULT_CRITERIA.map(criterion => [criterion.name, criterion.description, criterion.controlPoints] as const);
 
 export async function seedDevelopmentData() {
   if (process.env.NODE_ENV === "production") throw new Error("Demo verisi üretim ortamında oluşturulamaz.");

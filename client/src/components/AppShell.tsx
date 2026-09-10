@@ -2,7 +2,7 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
-import { Bell, BookOpenCheck, ClipboardCheck, FileBarChart, LayoutDashboard, LogOut, Menu, Settings, ShieldCheck, Users, X } from "lucide-react";
+import { Bell, BookOpenCheck, ClipboardCheck, FileBarChart, LayoutDashboard, ListChecks, LogOut, Menu, Settings, ShieldCheck, Users, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
@@ -10,6 +10,7 @@ import { trpc } from "@/lib/trpc";
 const adminNavigation = [
   { label: "Genel Bakış", path: "/admin/dashboard", icon: LayoutDashboard },
   { label: "Eğitimler", path: "/admin/trainings", icon: BookOpenCheck },
+  { label: "Kriter Yönetimi", path: "/admin/criteria", icon: ListChecks },
   { label: "Kullanıcılar", path: "/admin/users", icon: Users },
   { label: "Raporlar", path: "/admin/reports", icon: FileBarChart },
   { label: "Denetim Kayıtları", path: "/admin/audit-logs", icon: ShieldCheck },

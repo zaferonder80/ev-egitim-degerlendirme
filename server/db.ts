@@ -3,7 +3,8 @@ import path from "node:path";
 import Database from "better-sqlite3";
 import { and, eq, gt } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/better-sqlite3";
-import { sessions, users, type InsertUser } from "../drizzle/schema";
+import { criteria, sessions, users, type InsertUser } from "../drizzle/schema";
+import { DEFAULT_CRITERIA } from "./defaultCriteria";
 
 const sqliteFile = process.env.DATABASE_URL ?? "./data/app.db";
 
@@ -194,6 +195,19 @@ export async function getDb() {
     sqlite.pragma("foreign_keys = ON");
     ensureSqliteSchema(sqlite);
     _db = drizzle(sqlite);
+
+    const existingCriteria = await _db.select().from(criteria).limit(1);
+    if (existingCriteria.length === 0) {
+      await _db.insert(criteria).values(
+        DEFAULT_CRITERIA.map((criterion, index) => ({
+          orderNumber: index + 1,
+          name: criterion.name,
+          description: criterion.description,
+          controlPoints: criterion.controlPoints,
+          isActive: true,
+        }))
+      );
+    }
   }
   return _db;
 }

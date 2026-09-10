@@ -3,6 +3,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/NotFound";
 import AdminAuditLogs from "@/pages/AdminAuditLogs";
 import AdminDashboard from "@/pages/AdminDashboard";
+import AdminCriteria from "@/pages/AdminCriteria";
 import AdminTrainings from "@/pages/AdminTrainings";
 import AdminUsers from "@/pages/AdminUsers";
 import ChangePassword from "@/pages/ChangePassword";
@@ -27,6 +28,7 @@ function Router() {
       <Route path={"/admin/trainings/:id/edit"} component={AdminTrainings} />
       <Route path={"/admin/trainings/:id"} component={AdminTrainings} />
       <Route path={"/admin/trainings"} component={AdminTrainings} />
+      <Route path={"/admin/criteria"} component={AdminCriteria} />
       <Route path={"/admin/users"} component={AdminUsers} />
       <Route path={"/admin/reports"} component={AdminReports} />
       <Route path={"/admin/audit-logs"} component={AdminAuditLogs} />

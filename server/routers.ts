@@ -324,6 +324,62 @@ export const appRouter = router({
   }),
 
   admin: router({
+    criteria: router({
+      list: adminProcedure.query(async () => {
+        const db = await getDb();
+        if (!db) return [];
+        return db.select().from(criteria).orderBy(criteria.orderNumber);
+      }),
+      create: adminProcedure
+        .input(
+          z.object({
+            name: z.string().trim().min(2).max(200),
+            description: z.string().trim().max(1000).optional().nullable(),
+            controlPoints: z
+              .array(z.string().trim().min(1).max(500))
+              .min(1)
+              .max(10),
+          })
+        )
+        .mutation(async ({ ctx, input }) => {
+          assertNoForcedPasswordChange(ctx.user);
+          const db = await getDb();
+          if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+
+          const allCriteria = await db.select().from(criteria);
+          const nextOrder = Math.max(...allCriteria.map(item => item.orderNumber), 0) + 1;
+          const result = await db.insert(criteria).values({
+            orderNumber: nextOrder,
+            name: input.name,
+            description: input.description?.trim() || null,
+            controlPoints: input.controlPoints.map(point => point.trim()),
+            isActive: true,
+          });
+
+          const id = Number(result.lastInsertRowid ?? 0);
+          await audit(ctx.user.id, "CRITERION_CREATED", "CRITERION", id, {
+            name: input.name,
+          });
+          return { id };
+        }),
+      remove: adminProcedure
+        .input(z.object({ id: z.number().int().positive() }))
+        .mutation(async ({ ctx, input }) => {
+          assertNoForcedPasswordChange(ctx.user);
+          const db = await getDb();
+          if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+
+          await db
+            .update(criteria)
+            .set({ isActive: false, updatedAt: new Date() })
+            .where(eq(criteria.id, input.id));
+
+          await audit(ctx.user.id, "CRITERION_REMOVED", "CRITERION", input.id, {
+            removed: true,
+          });
+          return { success: true };
+        }),
+    }),
     dashboard: adminProcedure
       .input(
         z
