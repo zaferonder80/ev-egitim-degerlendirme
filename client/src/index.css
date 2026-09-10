@@ -1,0 +1,12 @@
+@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Source+Serif+4:opsz,wght@8..60,600&display=swap');
+@import "tailwindcss";
+
+@theme inline { --font-sans: "Manrope", ui-sans-serif, system-ui, sans-serif; --color-primary: #0b385d; --color-primary-foreground: #ffffff; --color-ring: #14a6a0; }
+
+@layer base {
+  * { @apply border-slate-200; }
+  body { @apply bg-slate-50 font-sans antialiased; }
+  button, input, textarea, select { font: inherit; }
+  button { @apply transition-transform duration-150 ease-out active:scale-[0.98]; }
+  :focus-visible { @apply outline-none ring-2 ring-teal-500 ring-offset-2; }
+}
