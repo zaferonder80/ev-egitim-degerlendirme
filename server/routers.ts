@@ -505,7 +505,7 @@ export const appRouter = router({
               mustChangePassword: true,
               loginMethod: "password",
             });
-          const id = Number(result[0].insertId);
+          const id = Number(result.lastInsertRowid ?? 0);
           await audit(ctx.user.id, "USER_CREATED", "USER", id, {
             email: input.email,
             role: input.role,
@@ -657,7 +657,7 @@ export const appRouter = router({
           const result = await db
             .insert(trainings)
             .values({ ...data, createdById: ctx.user.id });
-          const trainingId = Number(result[0].insertId);
+          const trainingId = Number(result.lastInsertRowid ?? 0);
           if (evaluatorIds.length) {
             const validEvaluators = await db
               .select()
@@ -1075,7 +1075,7 @@ export const appRouter = router({
               ...(summary ?? {}),
               submittedAt: input.complete ? new Date() : null,
             });
-          evaluationId = Number(result[0].insertId);
+          evaluationId = Number(result.lastInsertRowid ?? 0);
         } else {
           await db
             .update(evaluations)
@@ -1096,7 +1096,8 @@ export const appRouter = router({
               score: response.score,
               comment: response.comment,
             })
-            .onDuplicateKeyUpdate({
+            .onConflictDoUpdate({
+              target: [evaluationResponses.evaluationId, evaluationResponses.criterionId],
               set: { score: response.score, comment: response.comment },
             });
         await db
