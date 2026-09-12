@@ -12,7 +12,7 @@ type EditableUser = {
   id: number;
   firstName: string;
   lastName: string;
-  role: "ADMIN" | "EVALUATOR";
+  role: "ADMIN" | "TRAINING_MANAGER" | "EVALUATOR";
   isActive: boolean;
 };
 
@@ -83,7 +83,7 @@ export default function AdminUsers() {
                     </td>
                     <td className="px-4 py-4">
                       <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-700">
-                        {user.role === "ADMIN" ? "Yönetici" : "Değerlendirici"}
+                        {user.role === "ADMIN" ? "Yönetici" : user.role === "TRAINING_MANAGER" ? "Eğitim Yöneticisi" : "Değerlendirici"}
                       </span>
                     </td>
                     <td className="px-4 py-4">
@@ -220,7 +220,7 @@ function CreateUser({
     firstName: "",
     lastName: "",
     email: "",
-    role: "EVALUATOR" as "ADMIN" | "EVALUATOR",
+    role: "EVALUATOR" as "ADMIN" | "TRAINING_MANAGER" | "EVALUATOR",
     password: "",
   });
   return (
@@ -275,13 +275,14 @@ function CreateUser({
               onChange={event =>
                 setForm({
                   ...form,
-                  role: event.target.value as "ADMIN" | "EVALUATOR",
+                  role: event.target.value as "ADMIN" | "TRAINING_MANAGER" | "EVALUATOR",
                 })
               }
               className="flex h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm"
             >
-              <option value="EVALUATOR">Değerlendirici</option>
               <option value="ADMIN">Yönetici</option>
+              <option value="TRAINING_MANAGER">Eğitim Yöneticisi</option>
+              <option value="EVALUATOR">Değerlendirici</option>
             </select>
           </div>
           <div className="space-y-2">
@@ -396,8 +397,9 @@ function EditUser({
               }
               className="flex h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm"
             >
-              <option value="EVALUATOR">Değerlendirici</option>
               <option value="ADMIN">Yönetici</option>
+              <option value="TRAINING_MANAGER">Eğitim Yöneticisi</option>
+              <option value="EVALUATOR">Değerlendirici</option>
             </select>
           </div>
           <label className="flex items-center gap-3 self-end rounded-lg border border-slate-200 px-3 py-2.5 text-sm text-slate-700">

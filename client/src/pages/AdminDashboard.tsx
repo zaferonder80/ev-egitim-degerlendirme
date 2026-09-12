@@ -1,5 +1,6 @@
 import { AppShell } from "@/components/AppShell";
 import { Card, CardContent } from "@/components/ui/card";
+import { useAuth } from "@/_core/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
 import { AlertTriangle, CheckCircle2, ClipboardCheck, GraduationCap, TrendingUp, XCircle } from "lucide-react";
 import { Bar, BarChart, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
@@ -27,10 +28,12 @@ function CriteriaTooltip({ active, payload }: { active?: boolean; payload?: Arra
 }
 
 export default function AdminDashboard() {
+  const { user } = useAuth();
   const [period, setPeriod] = useState<"ALL" | "30_DAYS" | "90_DAYS" | "YEAR">("ALL");
   const [selectedSetId, setSelectedSetId] = useState<number | "">("");
   const [selectedTrainingType, setSelectedTrainingType] = useState<"Ürün" | "Üretim" | "Destek" | "">("");
   const evaluationSets = trpc.admin.evaluationSets.list.useQuery();
+  const appRole = user?.role === "TRAINING_MANAGER" ? "TRAINING_MANAGER" : "ADMIN";
   const query = trpc.admin.dashboard.useQuery({
     period,
     evaluationSetId: selectedSetId === "" ? null : Number(selectedSetId),
@@ -40,7 +43,7 @@ export default function AdminDashboard() {
   const criteriaChart = (query.data?.charts.criteria ?? []) as CriterionChartPoint[];
   const metrics = cards ? [["Toplam eğitim", cards.totalTrainings], ["Aktif değerlendirme", cards.activeAssignments], ["Tamamlanan", cards.completedEvaluations], ["Bekleyen", cards.pendingEvaluations], ["Başarılı eğitim", cards.successfulTrainings], ["Başarısız eğitim", cards.unsuccessfulTrainings]] : [];
 
-  return <AppShell role="ADMIN">
+  return <AppShell role={appRole}>
     <div className="mb-8 flex flex-wrap items-end justify-between gap-4">
       <div><p className="text-sm font-medium text-teal-700">Yönetim göstergesi</p><h1 className="mt-1 text-3xl font-semibold tracking-tight text-[#0b385d]">Eğitim değerlendirme özeti</h1><p className="mt-2 text-sm text-slate-500">Seçilen zaman aralığındaki tamamlanan değerlendirmelerin görünümü.</p></div>
       <div className="flex items-end gap-3"><label className="grid gap-1 text-right text-xs font-medium text-slate-500">Zaman aralığı<select value={period} onChange={event => setPeriod(event.target.value as typeof period)} className="h-9 rounded-lg border border-slate-200 bg-white px-3 text-sm font-normal text-slate-700 outline-none focus:border-teal-500"><option value="ALL">Tüm zamanlar</option><option value="30_DAYS">Son 30 gün</option><option value="90_DAYS">Son 90 gün</option><option value="YEAR">Son 1 yıl</option></select></label><label className="grid gap-1 text-right text-xs font-medium text-slate-500">Değerlendirme seti<select value={selectedSetId} onChange={event => setSelectedSetId(event.target.value === "" ? "" : Number(event.target.value))} className="h-9 rounded-lg border border-slate-200 bg-white px-3 text-sm font-normal text-slate-700 outline-none focus:border-teal-500"><option value="">Tüm setler</option>{evaluationSets.data?.filter(set => set.isActive).map(set => <option key={set.id} value={set.id}>{set.name}</option>)}</select></label><label className="grid gap-1 text-right text-xs font-medium text-slate-500">Eğitim müdürlüğü<select value={selectedTrainingType} onChange={event => setSelectedTrainingType(event.target.value as typeof selectedTrainingType)} className="h-9 rounded-lg border border-slate-200 bg-white px-3 text-sm font-normal text-slate-700 outline-none focus:border-teal-500"><option value="">Tümü</option><option value="Ürün">Ürün</option><option value="Üretim">Üretim</option><option value="Destek">Destek</option></select></label><div className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-right"><p className="text-xs text-slate-500">Genel tamamlanma oranı</p><p className="text-xl font-semibold text-[#0b385d]">{(cards?.completionRate ?? 0).toFixed(2)}%</p></div></div>
@@ -53,7 +56,7 @@ export default function AdminDashboard() {
         </CardContent></Card>
         <Card className="border-slate-200 shadow-sm"><CardContent className="p-6"><p className="font-semibold text-[#0b385d]">Başarı dağılımı</p><p className="mt-1 text-sm text-slate-500">Eğitim sonuçlarının durumu</p><div className="h-60"><ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={query.data?.charts.success} dataKey="value" nameKey="name" innerRadius={65} outerRadius={92} paddingAngle={4}>{(query.data?.charts.success ?? []).map((_, index) => <Cell key={index} fill={index === 0 ? "#16a370" : "#e35968"} />)}</Pie><Tooltip /></PieChart></ResponsiveContainer></div><div className="flex justify-center gap-4 text-xs"><span className="flex items-center gap-1.5"><i className="h-2.5 w-2.5 rounded-full bg-emerald-600" /> Başarılı</span><span className="flex items-center gap-1.5"><i className="h-2.5 w-2.5 rounded-full bg-rose-500" /> Başarısız</span></div></CardContent></Card>
       </div>
-      <Card className="mt-6 border-slate-200 shadow-sm"><CardContent className="p-6"><div className="flex items-center gap-3"><div className="grid h-10 w-10 place-items-center rounded-xl bg-teal-50 text-teal-700"><TrendingUp className="h-5 w-5" /></div><div><p className="font-semibold text-[#0b385d]">Değerlendirici tamamlanma oranları</p><p className="text-sm text-slate-500">Atama sayısına göre tamamlanan değerlendirmeler</p></div></div><div className="mt-5 grid gap-4 md:grid-cols-3">{(query.data?.charts.evaluators ?? []).map(item => <div key={item.name} className="rounded-xl bg-slate-50 p-4"><div className="flex justify-between text-sm"><span className="font-medium text-slate-700">{item.name}</span><span className="font-semibold text-teal-700">{item.completionRate.toFixed(0)}%</span></div><div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-200"><div className="h-full rounded-full bg-teal-500" style={{ width: `${item.completionRate}%` }} /></div></div>)}</div></CardContent></Card>
+      <Card className="mt-6 border-slate-200 shadow-sm"><CardContent className="p-6"><div className="flex items-center gap-3"><div className="grid h-10 w-10 place-items-center rounded-xl bg-teal-50 text-teal-700"><TrendingUp className="h-5 w-5" /></div><div><p className="font-semibold text-[#0b385d]">Değerlendirici tamamlanma oranları</p><p className="text-sm text-slate-500">Atama sayısına göre tamamlanan değerlendirmeler</p></div></div><div className="mt-5 grid gap-4 md:grid-cols-3">{(query.data?.charts.evaluators ?? []).map(item => <div key={item.name} className="rounded-xl bg-slate-50 p-4"><div className="flex justify-between text-sm"><span className="font-medium text-slate-700">{item.name}</span><span className="font-semibold text-teal-700">{item.completedCount}/{item.assignedCount} · {item.completionRate.toFixed(0)}%</span></div><div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-200"><div className="h-full rounded-full bg-teal-500" style={{ width: `${item.completionRate}%` }} /></div></div>)}</div></CardContent></Card>
     </>}
   </AppShell>;
 }

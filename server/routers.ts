@@ -42,6 +42,7 @@ import {
   protectedProcedure,
   publicProcedure,
   router,
+  trainingManagerProcedure,
 } from "./_core/trpc";
 
 const scoreScale = [1, 2, 3, 4, 5] as const;
@@ -423,7 +424,7 @@ export const appRouter = router({
         }),
     }),
     evaluationSets: router({
-      list: adminProcedure.query(async () => {
+      list: trainingManagerProcedure.query(async () => {
         const db = await getDb();
         if (!db) return [];
         const sets = await db.select().from(evaluationSets).orderBy(desc(evaluationSets.createdAt));
@@ -570,7 +571,7 @@ export const appRouter = router({
           return { success: true };
         }),
     }),
-    dashboard: adminProcedure
+    dashboard: trainingManagerProcedure
       .input(
         z
           .object({
@@ -659,16 +660,21 @@ export const appRouter = router({
         const unsuccessfulTrainings = new Set(
           filteredCompleted.filter(item => item.successStatus === "UNSUCCESSFUL").map(item => item.trainingId)
         );
-        const evaluatorUsers = allUsers.filter(user => user.role === "EVALUATOR");
-        const evaluatorCompletion = evaluatorUsers.map(user => {
-          const assigned = activeAssignments.filter(item => item.evaluatorId === user.id);
-          return {
-            name: `${user.firstName} ${user.lastName}`,
-            completionRate: assigned.length
-              ? (assigned.filter(item => completedAssignmentIds.has(item.id)).length / assigned.length) * 100
-              : 0,
-          };
-        });
+        const evaluatorUsers = allUsers.filter(user =>
+          activeAssignments.some(item => item.evaluatorId === user.id)
+        );
+        const evaluatorCompletion = evaluatorUsers
+          .map(user => {
+            const assigned = activeAssignments.filter(item => item.evaluatorId === user.id);
+            const completedCount = assigned.filter(item => completedAssignmentIds.has(item.id)).length;
+            return {
+              name: `${user.firstName} ${user.lastName}`,
+              assignedCount: assigned.length,
+              completedCount,
+              completionRate: assigned.length ? (completedCount / assigned.length) * 100 : 0,
+            };
+          })
+          .sort((a, b) => a.name.localeCompare(b.name, "tr"));
         const activeTrainings = filteredTrainings.filter(training => activeTrainingIds.has(training.id));
         return {
           cards: {
@@ -693,7 +699,7 @@ export const appRouter = router({
         };
       }),
     users: router({
-      list: adminProcedure
+      list: trainingManagerProcedure
         .input(z.object({ activeOnly: z.boolean().optional() }).optional())
         .query(async ({ input }) => {
           const db = await getDb();
@@ -713,7 +719,7 @@ export const appRouter = router({
             firstName: z.string().trim().min(2).max(100),
             lastName: z.string().trim().min(2).max(100),
             email: z.string().email(),
-            role: z.enum(["ADMIN", "EVALUATOR"]),
+            role: z.enum(["ADMIN", "TRAINING_MANAGER", "EVALUATOR"]),
             password: z.string().min(1),
           })
         )
@@ -766,7 +772,7 @@ export const appRouter = router({
             id: z.number().int().positive(),
             firstName: z.string().trim().min(2).max(100),
             lastName: z.string().trim().min(2).max(100),
-            role: z.enum(["ADMIN", "EVALUATOR"]),
+            role: z.enum(["ADMIN", "TRAINING_MANAGER", "EVALUATOR"]),
             isActive: z.boolean(),
           })
         )
@@ -823,8 +829,66 @@ export const appRouter = router({
           return { success: true };
         }),
     }),
+      reports: router({
+        list: trainingManagerProcedure.query(async () => {
+          const db = await getDb();
+          if (!db) return [];
+          const rows = await db
+            .select({ assignment: assignments, training: trainings, evaluationSet: evaluationSets, evaluation: evaluations })
+            .from(assignments)
+            .innerJoin(trainings, eq(assignments.trainingId, trainings.id))
+            .leftJoin(evaluationSets, eq(assignments.evaluationSetId, evaluationSets.id))
+            .leftJoin(evaluations, eq(evaluations.assignmentId, assignments.id));
+          const grouped = new Map<string, {
+            id: string;
+            trainingId: number;
+            title: string;
+            code: string;
+            version: string;
+            contentOwner: string;
+            trainingType: string;
+            evaluationSetId: number | null;
+            evaluationSetName: string;
+            assignedCount: number;
+            completedCount: number;
+            totalScore: number;
+          }>();
+          for (const row of rows) {
+            const evaluationSetId = row.assignment.evaluationSetId ?? null;
+            const key = `${row.training.id}-${evaluationSetId ?? "none"}`;
+            const current = grouped.get(key) ?? {
+              id: key,
+              trainingId: row.training.id,
+              title: row.training.title,
+              code: row.training.code,
+              version: row.training.version,
+              contentOwner: row.training.contentOwner ?? "Belirtilmemiş",
+              trainingType: row.training.trainingType ?? "Belirtilmemiş",
+              evaluationSetId,
+              evaluationSetName: row.evaluationSet?.name ?? "Değerlendirme seti belirtilmemiş",
+              assignedCount: 0,
+              completedCount: 0,
+              totalScore: 0,
+            };
+            current.assignedCount += 1;
+            if (row.evaluation?.status === "COMPLETED" && row.evaluation.totalScore !== null) {
+              current.completedCount += 1;
+              current.totalScore += row.evaluation.totalScore;
+            }
+            grouped.set(key, current);
+          }
+          return Array.from(grouped.values()).map(row => {
+            const averageTotal = row.completedCount ? row.totalScore / row.completedCount : null;
+            return {
+              ...row,
+              averageTotal,
+              successStatus: averageTotal === null ? null : averageTotal >= 70 ? "SUCCESSFUL" as const : "UNSUCCESSFUL" as const,
+            };
+          });
+        }),
+      }),
     trainings: router({
-      list: adminProcedure
+      list: trainingManagerProcedure
         .input(z.object({ status: trainingStatus.optional() }).optional())
         .query(async ({ input }) => {
           const db = await getDb();
@@ -854,6 +918,33 @@ export const appRouter = router({
               acc[key] = [...(acc[key] ?? []), assignment.evaluatorId];
               return acc;
             }, {});
+            const evaluationSetSummaryBySet = Object.fromEntries(
+              Object.entries(assignedEvaluatorIdsBySet).map(([setId]) => {
+                const setAssignments = matches.filter(
+                  assignment => String(assignment.evaluationSetId) === setId
+                );
+                const setAssignmentIds = new Set(setAssignments.map(assignment => assignment.id));
+                const setCompleted = complete.filter(
+                  item => setAssignmentIds.has(item.assignmentId)
+                );
+                const averageTotal = setCompleted.length
+                  ? setCompleted.reduce((sum, item) => sum + (item.totalScore ?? 0), 0) / setCompleted.length
+                  : null;
+                return [setId, {
+                  averageTotal,
+                  successStatus:
+                    averageTotal === null
+                      ? null
+                      : averageTotal >= 70
+                        ? "SUCCESSFUL"
+                        : "UNSUCCESSFUL",
+                  dueDate: setAssignments.reduce<Date | null>(
+                    (latest, assignment) => !latest || assignment.dueDate > latest ? assignment.dueDate : latest,
+                    null
+                  ),
+                }];
+              })
+            );
             const completed = complete.filter(
               item => item.trainingId === training.id
             );
@@ -867,6 +958,7 @@ export const appRouter = router({
               ...training,
               evaluatorIds: matches.map(assignment => assignment.evaluatorId),
               assignedEvaluatorIdsBySet,
+              evaluationSetSummaryBySet,
               completedEvaluatorIds: matches
                 .filter(assignment => assignment.status === "COMPLETED")
                 .map(assignment => assignment.evaluatorId),
@@ -885,7 +977,7 @@ export const appRouter = router({
             };
           });
         }),
-      create: adminProcedure
+      create: trainingManagerProcedure
         .input(
           trainingInput.extend({
             evaluatorIds: z.array(z.number().int().positive()).default([]),
@@ -957,7 +1049,7 @@ export const appRouter = router({
           });
           return { id: trainingId };
         }),
-      update: adminProcedure
+      update: trainingManagerProcedure
         .input(trainingInput.extend({ id: z.number().int().positive() }))
         .mutation(async ({ ctx, input }) => {
           assertNoForcedPasswordChange(ctx.user);
@@ -969,7 +1061,7 @@ export const appRouter = router({
           await audit(ctx.user.id, "TRAINING_UPDATED", "TRAINING", id);
           return { success: true };
         }),
-      archive: adminProcedure
+      archive: trainingManagerProcedure
         .input(z.object({ id: z.number().int().positive() }))
         .mutation(async ({ ctx, input }) => {
           const db = await getDb();
@@ -999,7 +1091,7 @@ export const appRouter = router({
           );
           return { success: true, status: nextStatus };
         }),
-      detail: adminProcedure
+      detail: trainingManagerProcedure
         .input(z.object({ id: z.number().int().positive() }))
         .query(async ({ input }) => {
           const db = await getDb();
@@ -1013,9 +1105,10 @@ export const appRouter = router({
           )[0];
           if (!training) throw new TRPCError({ code: "NOT_FOUND" });
           const records = await db
-            .select({ assignment: assignments, evaluator: users })
+            .select({ assignment: assignments, evaluator: users, evaluationSet: evaluationSets })
             .from(assignments)
             .innerJoin(users, eq(assignments.evaluatorId, users.id))
+            .leftJoin(evaluationSets, eq(assignments.evaluationSetId, evaluationSets.id))
             .where(eq(assignments.trainingId, input.id));
           const resultEvaluations = await db
             .select()
@@ -1026,6 +1119,7 @@ export const appRouter = router({
             assignments: records.map(record => ({
               ...record.assignment,
               evaluator: safeUser(record.evaluator),
+              evaluationSet: record.evaluationSet,
               evaluation:
                 resultEvaluations.find(
                   evaluation => evaluation.assignmentId === record.assignment.id
@@ -1033,7 +1127,7 @@ export const appRouter = router({
             })),
           };
         }),
-      assign: adminProcedure
+      assign: trainingManagerProcedure
         .input(
           z.object({
             trainingId: z.number().int().positive(),
@@ -1079,14 +1173,13 @@ export const appRouter = router({
             .where(
               and(
                 inArray(users.id, uniqueEvaluatorIds),
-                eq(users.role, "EVALUATOR"),
                 eq(users.isActive, true)
               )
             );
           if (evaluatorRows.length !== uniqueEvaluatorIds.length)
             throw new TRPCError({
               code: "BAD_REQUEST",
-              message: "Yalnızca aktif değerlendiriciler atanabilir.",
+              message: "Yalnızca aktif kullanıcılar atanabilir.",
             });
           const desiredEvaluatorIds = new Set(uniqueEvaluatorIds);
           const selectedSetId = input.evaluationSetId ?? null;
@@ -1169,7 +1262,7 @@ export const appRouter = router({
           );
           return { success: true };
         }),
-      reopen: adminProcedure
+      reopen: trainingManagerProcedure
         .input(z.object({ assignmentId: z.number().int().positive() }))
         .mutation(async ({ ctx, input }) => {
           const db = await getDb();
@@ -1218,7 +1311,7 @@ export const appRouter = router({
 
   evaluator: router({
     dashboard: protectedProcedure.query(async ({ ctx }) => {
-      if (ctx.user.role !== "EVALUATOR")
+      if (!(["ADMIN", "TRAINING_MANAGER", "EVALUATOR"] as const).includes(ctx.user.role))
         throw new TRPCError({ code: "FORBIDDEN" });
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
@@ -1245,7 +1338,7 @@ export const appRouter = router({
     assignments: protectedProcedure
       .input(z.object({ status: assignmentStatus.optional() }).optional())
       .query(async ({ ctx, input }) => {
-        if (ctx.user.role !== "EVALUATOR")
+        if (!(["ADMIN", "TRAINING_MANAGER", "EVALUATOR"] as const).includes(ctx.user.role))
           throw new TRPCError({ code: "FORBIDDEN" });
         const db = await getDb();
         if (!db) return [];
@@ -1348,7 +1441,7 @@ export const appRouter = router({
         })
       )
       .mutation(async ({ ctx, input }) => {
-        if (ctx.user.role !== "EVALUATOR")
+        if (!(["ADMIN", "TRAINING_MANAGER", "EVALUATOR"] as const).includes(ctx.user.role))
           throw new TRPCError({ code: "FORBIDDEN" });
         const db = await getDb();
         if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });

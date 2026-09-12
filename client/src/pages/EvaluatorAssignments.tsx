@@ -2,6 +2,7 @@
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
+import { useAuth } from "@/_core/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
 import {
   CalendarClock,
@@ -44,9 +45,11 @@ export default function EvaluatorAssignments() {
 
 function AssignmentList({ onOpen }: { onOpen: (id: number) => void }) {
   const query = trpc.evaluator.assignments.useQuery();
+  const { user } = useAuth();
+  const shellRole = user?.role === "TRAINING_MANAGER" ? "TRAINING_MANAGER" : user?.role === "ADMIN" ? "ADMIN" : "EVALUATOR";
 
   return (
-    <AppShell role="EVALUATOR">
+    <AppShell role={shellRole}>
       <div>
         <p className="text-sm font-medium text-teal-700">Değerlendirme takibi</p>
         <h1 className="mt-1 text-3xl font-semibold tracking-tight text-[#0b385d]">
@@ -140,10 +143,13 @@ function AssignmentList({ onOpen }: { onOpen: (id: number) => void }) {
 function EvaluationForm({ assignmentId, onBack }: { assignmentId: number; onBack: () => void }) {
   const detail = trpc.evaluator.assignmentDetail.useQuery({ assignmentId });
   const utils = trpc.useUtils();
+  const { user } = useAuth();
   const [activeTab, setActiveTab] = useState<"evaluation" | "training">("evaluation");
   const [scores, setScores] = useState<Record<number, number>>({});
   const [comments, setComments] = useState<Record<number, string>>({});
   const [generalComment, setGeneralComment] = useState("");
+
+  const shellRole = user?.role === "TRAINING_MANAGER" ? "TRAINING_MANAGER" : user?.role === "ADMIN" ? "ADMIN" : "EVALUATOR";
 
   const assignmentSet =
     detail.data?.evaluationSet ?? null;
@@ -211,14 +217,14 @@ function EvaluationForm({ assignmentId, onBack }: { assignmentId: number; onBack
 
   if (detail.isLoading)
     return (
-      <AppShell role="EVALUATOR">
+      <AppShell role={shellRole}>
         <div className="h-96 animate-pulse rounded-2xl bg-slate-200" />
       </AppShell>
     );
 
   if (!detail.data) {
     return (
-      <AppShell role="EVALUATOR">
+      <AppShell role={shellRole}>
         <p>Atama bulunamadı.</p>
       </AppShell>
     );
@@ -235,7 +241,7 @@ function EvaluationForm({ assignmentId, onBack }: { assignmentId: number; onBack
   const passingScore = Number(assignmentSet?.passingScore ?? 70);
 
   return (
-    <AppShell role="EVALUATOR">
+    <AppShell role={shellRole}>
       <button
         onClick={onBack}
         className="mb-5 flex items-center gap-2 text-sm font-medium text-slate-600 hover:text-[#0b385d]"

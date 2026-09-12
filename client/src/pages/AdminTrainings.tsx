@@ -1,4 +1,5 @@
 import { AppShell, formatDate, StatusBadge } from "@/components/AppShell";
+import { useAuth } from "@/_core/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { formatScoreValue } from "@shared/score";
@@ -12,6 +13,7 @@ import {
   CalendarDays,
   ChevronLeft,
   ClipboardPlus,
+  Download,
   Edit3,
   ImageUp,
   Plus,
@@ -132,6 +134,7 @@ function TrainingList({
   onEdit: (id: number) => void;
 }) {
   const utils = trpc.useUtils();
+  const { user } = useAuth();
   const trainingsQuery = trpc.admin.trainings.list.useQuery();
   const usersQuery = trpc.admin.users.list.useQuery({ activeOnly: true });
   const archive = trpc.admin.trainings.archive.useMutation({
@@ -163,8 +166,7 @@ function TrainingList({
   const [dueDate, setDueDate] = useState("");
   const evaluationSetsQuery = trpc.admin.evaluationSets.list.useQuery();
   const activeEvaluationSets = evaluationSetsQuery.data?.filter(set => set.isActive) ?? [];
-  const evaluators =
-    usersQuery.data?.filter(user => user.role === "EVALUATOR") ?? [];
+  const assignableUsers = usersQuery.data ?? [];
   const assigningTraining = assigning
     ? trainingsQuery.data?.find(item => item.id === assigning.id)
     : undefined;
@@ -207,9 +209,9 @@ function TrainingList({
       return true;
     });
   }, [advancedFilters, searchQuery, trainingsQuery.data]);
-  const allEvaluatorsSelected =
-    evaluators.length > 0 &&
-    evaluators.every(evaluator => evaluatorIds.includes(evaluator.id));
+  const allAssignableUsersSelected =
+    assignableUsers.length > 0 &&
+    assignableUsers.every(user => evaluatorIds.includes(user.id));
   const syncEvaluatorIdsForSet = (nextSetId: number | "") => {
     setEvaluationSetId(nextSetId);
     if (!assigning) return;
@@ -232,15 +234,15 @@ function TrainingList({
     });
   };
   const toggleAllEvaluators = () => {
-    if (allEvaluatorsSelected) {
+    if (allAssignableUsersSelected) {
       setEvaluatorIds(current =>
-        current.filter(id => !evaluators.some(evaluator => evaluator.id === id))
+        current.filter(id => !assignableUsers.some(user => user.id === id))
       );
       return;
     }
-    const nextIds = evaluators
-      .filter(evaluator => !completedEvaluatorIds.has(evaluator.id))
-      .map(evaluator => evaluator.id);
+    const nextIds = assignableUsers
+      .filter(user => !completedEvaluatorIds.has(user.id))
+      .map(user => user.id);
     setEvaluatorIds(current => {
       const merged = [...current, ...nextIds];
       return merged.filter((id, index) => merged.indexOf(id) === index);
@@ -259,8 +261,27 @@ function TrainingList({
       dueDate: new Date(`${dueDate}T12:00:00`),
     });
   };
+  const appRole = user?.role === "TRAINING_MANAGER" ? "TRAINING_MANAGER" : "ADMIN";
+  const [downloadingSetKey, setDownloadingSetKey] = useState<string | null>(null);
+  const previewSetPdf = (trainingId: number, setId: string, code: string) => {
+    const key = `${trainingId}-${setId}`;
+    const fileName = encodeURIComponent(`degerlendirme-raporu-${code}-${setId}.pdf`);
+    const previewWindow = window.open(
+      `/admin/reports/preview?trainingId=${trainingId}&evaluationSetId=${setId}&fileName=${fileName}`,
+      "_blank",
+      "noopener,noreferrer"
+    );
+    if (!previewWindow) {
+      toast.error("PDF önizleme penceresi açılamadı. Tarayıcı açılır pencereyi engelliyor olabilir.");
+      return;
+    }
+    setDownloadingSetKey(key);
+    setTimeout(() => setDownloadingSetKey(null), 1000);
+    previewWindow.focus();
+  };
+
   return (
-    <AppShell role="ADMIN">
+    <AppShell role={appRole}>
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <p className="text-sm font-medium text-teal-700">Eğitim kataloğu</p>
@@ -369,15 +390,13 @@ function TrainingList({
       <Card className="mt-7 border-slate-200 shadow-sm">
         <CardContent className="p-0">
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[950px] text-left text-sm">
+            <table className="w-full min-w-[800px] text-left text-sm">
               <thead className="border-b border-slate-200 bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
                 <tr>
                   <th className="px-6 py-4 font-semibold">Eğitim</th>
                   <th className="px-4 py-4 font-semibold">Müdürlük</th>
                   <th className="px-4 py-4 font-semibold">Durum</th>
                   <th className="px-4 py-4 font-semibold">Atama</th>
-                  <th className="px-4 py-4 font-semibold">Ortalama</th>
-                  <th className="px-4 py-4 font-semibold">Son tarih</th>
                   <th className="px-6 py-4 text-right font-semibold">
                     İşlemler
                   </th>
@@ -387,57 +406,119 @@ function TrainingList({
                 {trainingsQuery.isLoading ? (
                   <tr>
                     <td
-                      colSpan={7}
+                      colSpan={5}
                       className="px-6 py-12 text-center text-slate-500"
                     >
                       Eğitimler yükleniyor…
                     </td>
                   </tr>
                 ) : filteredTrainings.length ? (
-                  filteredTrainings.map(training => (
-                    <tr key={training.id} className="hover:bg-slate-50/70">
-                      <td className="px-6 py-4">
-                        <p className="font-semibold text-[#0b385d]">
-                          {training.title}
-                        </p>
-                        <p className="mt-1 text-xs text-slate-500">
-                          <span className="font-medium text-teal-700">
-                            {training.code}
-                          </span>{" "}
-                          · Sürüm {training.version}
-                        </p>
-                      </td>
-                      <td className="px-4 py-4">
-                        <span className="inline-flex rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-700">
-                          {training.trainingType ?? "—"}
-                        </span>
-                      </td>
-                      <td className="px-4 py-4">
-                        <StatusBadge status={training.status} />
-                      </td>
-                      <td className="px-4 py-4">
-                        <p className="font-medium text-slate-700">
-                          {training.completedCount} / {training.assignedCount}
-                        </p>
-                        <p className="text-xs text-slate-500">
-                          {training.pendingCount} bekliyor
-                        </p>
-                      </td>
-                      <td className="px-4 py-4">
-                        {training.averageTotal === null ? (
-                          <span className="text-slate-400">—</span>
-                        ) : (
-                          <>
-                            <p className="font-semibold text-slate-700">
-                              {formatScoreValue(training.averageTotal, 1)}
-                            </p>
-                            <StatusBadge status={training.successStatus} />
-                          </>
-                        )}
-                      </td>
-                      <td className="px-4 py-4 text-slate-600">
-                        {formatDate(training.evaluationEndDate)}
-                      </td>
+                  filteredTrainings.map(training => {
+                    const assignmentRows = Object.entries(
+                      training.assignedEvaluatorIdsBySet ?? {}
+                    ).map(([setId, evaluatorIds]) => {
+                      const setName =
+                        evaluationSetsQuery.data?.find(set => set.id === Number(setId))?.name ??
+                        `Set ${setId}`;
+                      const evaluatorNames = evaluatorIds
+                        .map(id => {
+                          const evaluator = usersQuery.data?.find(
+                            user => user.id === id && user.role === "EVALUATOR"
+                          );
+                          if (!evaluator) return null;
+                          return `${evaluator.firstName} ${evaluator.lastName}`.trim();
+                        })
+                        .filter(Boolean) as string[];
+                      const summary = training.evaluationSetSummaryBySet?.[setId];
+
+                      return { setId, setName, evaluatorNames, summary };
+                    });
+
+                    return (
+                      <tr key={training.id} className="hover:bg-slate-50/70">
+                        <td className="px-6 py-4">
+                          <p className="font-semibold text-[#0b385d]">
+                            {training.title}
+                          </p>
+                          <p className="mt-1 text-xs text-slate-500">
+                            <span className="font-medium text-teal-700">
+                              {training.code}
+                            </span>{" "}
+                            · Sürüm {training.version}
+                          </p>
+                        </td>
+                        <td className="px-4 py-4">
+                          <span className="inline-flex rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-700">
+                            {training.trainingType ?? "—"}
+                          </span>
+                        </td>
+                        <td className="px-4 py-4">
+                          <StatusBadge status={training.status} />
+                        </td>
+                        <td className="px-4 py-4">
+                          <p className="font-medium text-slate-700">
+                            {training.completedCount} / {training.assignedCount}
+                          </p>
+                          <p className="text-xs text-slate-500">
+                            {training.pendingCount} bekliyor
+                          </p>
+                          {assignmentRows.length > 0 && (
+                            <div className="mt-2 space-y-2">
+                              {assignmentRows.map(row => (
+                                <div
+                                  key={row.setId}
+                                  className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-1.5"
+                                >
+                                  <div className="flex items-center justify-between gap-2">
+                                    <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                                      {row.setName}
+                                    </p>
+                                    <Button
+                                      type="button"
+                                      variant="outline"
+                                      size="sm"
+                                      className="h-7 shrink-0 gap-1 px-2 text-[11px]"
+                                      onClick={() => previewSetPdf(training.id, row.setId, training.code)}
+                                      disabled={downloadingSetKey === `${training.id}-${row.setId}`}
+                                    >
+                                      <Download className="h-3 w-3" />
+                                      {downloadingSetKey === `${training.id}-${row.setId}` ? "Hazırlanıyor" : "PDF önizle"}
+                                    </Button>
+                                  </div>
+                                  <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-slate-500">
+                                    <span>
+                                      Başarı ortalaması: <strong className="text-slate-700">
+                                        {row.summary?.averageTotal == null ? "—" : `${formatScoreValue(row.summary.averageTotal, 1).replace(" / 100", "")}%`}
+                                      </strong>
+                                    </span>
+                                    <span>
+                                      Son tarih: <strong className="text-slate-700">{formatDate(row.summary?.dueDate)}</strong>
+                                    </span>
+                                    {row.summary?.successStatus && (
+                                      <StatusBadge status={row.summary.successStatus} />
+                                    )}
+                                  </div>
+                                  <div className="mt-1 flex flex-wrap gap-1">
+                                    {row.evaluatorNames.length ? (
+                                      row.evaluatorNames.map(name => (
+                                        <span
+                                          key={`${row.setId}-${name}`}
+                                          className="inline-flex rounded-full border border-teal-200 bg-teal-50 px-2 py-0.5 text-[11px] font-medium text-teal-700"
+                                        >
+                                          {name}
+                                        </span>
+                                      ))
+                                    ) : (
+                                      <span className="text-[11px] text-slate-400">
+                                        Atanmış değerlendirici yok
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </td>
                       <td className="px-6 py-4">
                         <div className="flex justify-end gap-2">
                           <Button
@@ -490,7 +571,8 @@ function TrainingList({
                         </div>
                       </td>
                     </tr>
-                  ))
+                    );
+                  })
                 ) : (
                   <tr>
                     <td colSpan={7} className="px-6 py-16 text-center">
@@ -571,35 +653,35 @@ function TrainingList({
                 <button
                   type="button"
                   className="text-xs font-medium text-teal-700 hover:underline disabled:text-slate-400 disabled:no-underline"
-                  disabled={!evaluators.length}
+                  disabled={!assignableUsers.length}
                   onClick={toggleAllEvaluators}
                 >
-                  {allEvaluatorsSelected ? "Tümünü kaldır" : "Tümünü seç"}
+                  {allAssignableUsersSelected ? "Tümünü kaldır" : "Tümünü seç"}
                 </button>
               </div>
               <div className="mt-2 max-h-48 space-y-2 overflow-auto rounded-xl border border-slate-200 p-3">
-                {evaluators.map(evaluator => (
+                {assignableUsers.map(userOption => (
                   <label
-                    key={evaluator.id}
+                    key={userOption.id}
                     className="flex cursor-pointer items-center gap-3 rounded-lg p-2 hover:bg-slate-50"
                   >
                     <input
                       type="checkbox"
                       className={
-                        completedEvaluatorIds.has(evaluator.id)
+                        completedEvaluatorIds.has(userOption.id)
                           ? "accent-emerald-600"
                           : "accent-teal-600"
                       }
-                      disabled={completedEvaluatorIds.has(evaluator.id)}
-                      checked={evaluatorIds.includes(evaluator.id)}
+                      disabled={completedEvaluatorIds.has(userOption.id)}
+                      checked={evaluatorIds.includes(userOption.id)}
                       onChange={event =>
-                        toggleEvaluator(evaluator.id, event.target.checked)
+                        toggleEvaluator(userOption.id, event.target.checked)
                       }
                     />
                     <span className="text-sm text-slate-700">
-                      {evaluator.firstName} {evaluator.lastName}
+                      {userOption.firstName} {userOption.lastName}
                       <small className="ml-2 text-slate-400">
-                        {evaluator.email}
+                        {userOption.email}
                       </small>
                     </span>
                   </label>
@@ -757,8 +839,11 @@ function TrainingEditor({ onExit }: { onExit: () => void }) {
     ["lastUpdatedDate", "Son güncelleme", "date", false],
     ["evaluationEndDate", "Değerlendirme son tarihi", "date", false],
   ];
+  const { user } = useAuth();
+  const appRole = user?.role === "TRAINING_MANAGER" ? "TRAINING_MANAGER" : "ADMIN";
+
   return (
-    <AppShell role="ADMIN">
+    <AppShell role={appRole}>
       <button
         type="button"
         className="mb-5 flex items-center gap-2 text-sm font-medium text-slate-600 hover:text-[#0b385d]"
@@ -942,21 +1027,48 @@ function TrainingDetail({
     },
     onError: error => toast.error(error.message),
   });
+  const { user } = useAuth();
+  const appRole = user?.role === "TRAINING_MANAGER" ? "TRAINING_MANAGER" : "ADMIN";
+  const [downloadingAssignmentId, setDownloadingAssignmentId] = useState<number | null>(null);
+
+  const downloadPdf = async (assignmentId: number, evaluationSetId: number | null, code: string) => {
+    setDownloadingAssignmentId(assignmentId);
+    try {
+      const params = evaluationSetId ? `?evaluationSetId=${evaluationSetId}` : "";
+      const response = await fetch(`/api/reports/training/${trainingId}.pdf${params}`, { credentials: "include" });
+      if (!response.ok) throw new Error("PDF raporu oluşturulamadı.");
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = `degerlendirme-raporu-${code}-${assignmentId}.pdf`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(url);
+      toast.success("PDF raporu indirildi.");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "PDF indirme başarısız oldu.");
+    } finally {
+      setDownloadingAssignmentId(null);
+    }
+  };
+
   if (query.isLoading)
     return (
-      <AppShell role="ADMIN">
+      <AppShell role={appRole}>
         <div className="h-80 animate-pulse rounded-2xl bg-slate-200" />
       </AppShell>
     );
   if (!query.data)
     return (
-      <AppShell role="ADMIN">
+      <AppShell role={appRole}>
         <p className="text-slate-500">Eğitim bulunamadı.</p>
       </AppShell>
     );
   const { training, assignments } = query.data;
   return (
-    <AppShell role="ADMIN">
+    <AppShell role={appRole}>
       <button
         className="mb-5 flex items-center gap-2 text-sm font-medium text-slate-600 hover:text-[#0b385d]"
         onClick={onBack}
@@ -1035,6 +1147,7 @@ function TrainingDetail({
                 <thead className="border-b bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
                   <tr>
                     <th className="px-5 py-3">Değerlendirici</th>
+                    <th className="px-4 py-3">Değerlendirme seti</th>
                     <th className="px-4 py-3">Durum</th>
                     <th className="px-4 py-3">Sonuç</th>
                     <th className="px-5 py-3 text-right">İşlem</th>
@@ -1051,6 +1164,9 @@ function TrainingDetail({
                           Son tarih: {formatDate(item.dueDate)}
                         </p>
                       </td>
+                      <td className="px-4 py-4 text-slate-600">
+                        {item.evaluationSet?.name ?? "Varsayılan set"}
+                      </td>
                       <td className="px-4 py-4">
                         <StatusBadge status={item.status} />
                       </td>
@@ -1065,21 +1181,17 @@ function TrainingDetail({
                         )}
                       </td>
                       <td className="px-5 py-4 text-right">
-                        {item.status === "COMPLETED" ? (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() =>
-                              reopen.mutate({ assignmentId: item.id })
-                            }
-                            disabled={reopen.isPending}
-                          >
-                            <RotateCcw className="mr-1.5 h-3.5 w-3.5" /> Yeniden
-                            aç
+                        <div className="flex justify-end gap-2">
+                          <Button size="sm" variant="outline" onClick={() => downloadPdf(item.id, item.evaluationSetId, training.code)} disabled={downloadingAssignmentId === item.id}>
+                            <Download className="mr-1.5 h-3.5 w-3.5" />
+                            {downloadingAssignmentId === item.id ? "Hazırlanıyor" : "PDF indir"}
                           </Button>
-                        ) : (
-                          <span className="text-xs text-slate-400">—</span>
-                        )}
+                          {item.status === "COMPLETED" && (
+                            <Button size="sm" variant="outline" onClick={() => reopen.mutate({ assignmentId: item.id })} disabled={reopen.isPending}>
+                              <RotateCcw className="mr-1.5 h-3.5 w-3.5" /> Yeniden aç
+                            </Button>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   ))}

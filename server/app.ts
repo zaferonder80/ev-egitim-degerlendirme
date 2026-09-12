@@ -6,6 +6,7 @@ import { appRouter } from "./routers";
 import { createContext } from "./_core/context";
 import { getSessionUser } from "./auth";
 import { buildTrainingEvaluationPdf } from "./reportPdf";
+import { buildTrainingEvaluationExcel } from "./reportExcel";
 import { createThreeDayDueReminders } from "./dueReminders";
 import { sdk } from "./_core/sdk";
 
@@ -19,16 +20,37 @@ registerOAuthRoutes(app);
 app.get("/api/reports/training/:id.pdf", async (req, res) => {
   try {
     const user = await getSessionUser(req);
-    if (!user || user.role !== "ADMIN") return res.status(403).json({ error: "forbidden" });
+    if (!user || !["ADMIN", "TRAINING_MANAGER"].includes(user.role)) return res.status(403).json({ error: "forbidden" });
     const trainingId = Number(req.params.id);
+    const evaluationSetId = req.query.evaluationSetId ? Number(req.query.evaluationSetId) : undefined;
     if (!Number.isInteger(trainingId) || trainingId <= 0) return res.status(400).json({ error: "invalid-training-id" });
-    const pdf = await buildTrainingEvaluationPdf(trainingId);
+    if (evaluationSetId !== undefined && (!Number.isInteger(evaluationSetId) || evaluationSetId <= 0)) return res.status(400).json({ error: "invalid-evaluation-set-id" });
+    const pdf = await buildTrainingEvaluationPdf(trainingId, evaluationSetId);
     res.setHeader("Content-Type", "application/pdf");
     res.setHeader("Content-Disposition", `attachment; filename="degerlendirme-raporu-${trainingId}.pdf"`);
     res.setHeader("Content-Length", pdf.length);
     return res.send(pdf);
   } catch (error) {
     console.error("[Reports] PDF generation failed", error);
+    return res.status(500).json({ error: "report-generation-failed" });
+  }
+});
+
+app.get("/api/reports/training/:id.xlsx", async (req, res) => {
+  try {
+    const user = await getSessionUser(req);
+    if (!user || !["ADMIN", "TRAINING_MANAGER"].includes(user.role)) return res.status(403).json({ error: "forbidden" });
+    const trainingId = Number(req.params.id);
+    const evaluationSetId = req.query.evaluationSetId ? Number(req.query.evaluationSetId) : undefined;
+    if (!Number.isInteger(trainingId) || trainingId <= 0) return res.status(400).json({ error: "invalid-training-id" });
+    if (evaluationSetId !== undefined && (!Number.isInteger(evaluationSetId) || evaluationSetId <= 0)) return res.status(400).json({ error: "invalid-evaluation-set-id" });
+    const excel = await buildTrainingEvaluationExcel(trainingId, evaluationSetId);
+    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    res.setHeader("Content-Disposition", `attachment; filename="degerlendirme-raporu-${trainingId}.xlsx"`);
+    res.setHeader("Content-Length", excel.length);
+    return res.send(excel);
+  } catch (error) {
+    console.error("[Reports] Excel generation failed", error);
     return res.status(500).json({ error: "report-generation-failed" });
   }
 });

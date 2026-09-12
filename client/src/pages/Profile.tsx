@@ -9,7 +9,7 @@ import { Clock3, KeyRound, LockKeyhole, Mail, ShieldCheck, UserRound } from "luc
 import { FormEvent, useState } from "react";
 import { toast } from "sonner";
 
-export default function Profile({ role }: { role: "ADMIN" | "EVALUATOR" }) {
+export default function Profile({ role }: { role: "ADMIN" | "TRAINING_MANAGER" | "EVALUATOR" }) {
   const { user, refresh } = useAuth();
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -36,7 +36,7 @@ export default function Profile({ role }: { role: "ADMIN" | "EVALUATOR" }) {
     { label: "Ad", value: user.firstName, icon: UserRound },
     { label: "Soyad", value: user.lastName, icon: UserRound },
     { label: "E-posta adresi", value: user.email, icon: Mail },
-    { label: "Rol", value: user.role === "ADMIN" ? "Yönetici" : "Değerlendirici", icon: ShieldCheck },
+    { label: "Rol", value: user.role === "ADMIN" ? "Yönetici" : user.role === "TRAINING_MANAGER" ? "Eğitim Yöneticisi" : "Değerlendirici", icon: ShieldCheck },
     { label: "Son giriş", value: formatDate(user.lastLoginAt), icon: Clock3 },
   ];
 

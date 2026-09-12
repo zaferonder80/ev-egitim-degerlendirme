@@ -14,6 +14,7 @@ import {
 } from "../drizzle/schema";
 import { DEFAULT_CRITERIA } from "./defaultCriteria";
 import { DEFAULT_EVALUATION_SETS } from "./defaultEvaluationSets";
+import { seedDefaultUsers } from "./defaultUsers";
 
 const sqliteFile = process.env.DATABASE_URL ?? "./data/app.db";
 
@@ -221,7 +222,15 @@ export async function getDb() {
     const sqlite = new Database(normalizedSqlitePath);
     sqlite.pragma("foreign_keys = ON");
     ensureSqliteSchema(sqlite);
+
+    const userColumns = sqlite.prepare("PRAGMA table_info(users)").all() as Array<{ name: string }>;
+    if (!userColumns.some(column => column.name === "name")) {
+      sqlite.exec("ALTER TABLE users ADD COLUMN name TEXT;");
+    }
+
     _db = drizzle(sqlite);
+
+    await seedDefaultUsers(_db);
 
     const existingCriteria = await _db.select().from(criteria).limit(1);
     if (existingCriteria.length === 0) {

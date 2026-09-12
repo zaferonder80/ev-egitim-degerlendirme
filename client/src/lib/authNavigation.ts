@@ -1,6 +1,7 @@
-export type AuthenticatedRole = "ADMIN" | "EVALUATOR";
+export type AuthenticatedRole = "ADMIN" | "TRAINING_MANAGER" | "EVALUATOR";
 
 export function getPostLoginPath(role: AuthenticatedRole, mustChangePassword: boolean) {
   if (mustChangePassword) return "/change-password";
-  return role === "ADMIN" ? "/admin/dashboard" : "/evaluator/dashboard";
+  if (role === "EVALUATOR") return "/evaluator/dashboard";
+  return "/admin/dashboard";
 }

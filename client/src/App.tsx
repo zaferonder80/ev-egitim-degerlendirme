@@ -13,6 +13,7 @@ import AdminReports from "@/pages/AdminReports";
 import Profile from "@/pages/Profile";
 import EvaluatorAssignments from "@/pages/EvaluatorAssignments";
 import EvaluatorDashboard from "@/pages/EvaluatorDashboard";
+import PdfPreview from "@/pages/PdfPreview";
 import { Route, Switch } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
@@ -33,6 +34,7 @@ function Router() {
       <Route path={"/admin/evaluation-sets"} component={AdminEvaluationSets} />
       <Route path={"/admin/users"} component={AdminUsers} />
       <Route path={"/admin/reports"} component={AdminReports} />
+      <Route path={"/admin/reports/preview"} component={PdfPreview} />
       <Route path={"/admin/audit-logs"} component={AdminAuditLogs} />
       <Route path={"/admin/profile"}>{() => <Profile role="ADMIN" />}</Route>
       <Route path={"/evaluator/dashboard"} component={EvaluatorDashboard} />

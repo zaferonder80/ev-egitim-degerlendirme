@@ -7,7 +7,7 @@ import {
   uniqueIndex,
 } from "drizzle-orm/sqlite-core";
 
-export const userRoles = ["ADMIN", "EVALUATOR"] as const;
+export const userRoles = ["ADMIN", "TRAINING_MANAGER", "EVALUATOR"] as const;
 export const trainingStatuses = ["DRAFT", "ACTIVE", "ARCHIVED"] as const;
 export const assignmentStatuses = ["PENDING", "DRAFT", "COMPLETED", "OVERDUE", "REOPENED"] as const;
 export const evaluationStatuses = ["DRAFT", "COMPLETED"] as const;

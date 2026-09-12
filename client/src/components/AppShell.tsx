@@ -10,6 +10,7 @@ import { trpc } from "@/lib/trpc";
 const adminNavigation = [
   { label: "Genel Bakış", path: "/admin/dashboard", icon: LayoutDashboard },
   { label: "Eğitimler", path: "/admin/trainings", icon: BookOpenCheck },
+  { label: "Atamalarım", path: "/evaluator/assignments", icon: ClipboardCheck },
   { label: "Kriter Yönetimi", path: "/admin/criteria", icon: ListChecks },
   { label: "Değerlendirme Setleri", path: "/admin/evaluation-sets", icon: ClipboardCheck },
   { label: "Kullanıcılar", path: "/admin/users", icon: Users },
@@ -17,10 +18,31 @@ const adminNavigation = [
   { label: "Denetim Kayıtları", path: "/admin/audit-logs", icon: ShieldCheck },
 ];
 
+const trainingManagerNavigation = [
+  { label: "Genel Bakış", path: "/admin/dashboard", icon: LayoutDashboard },
+  { label: "Eğitimler", path: "/admin/trainings", icon: BookOpenCheck },
+  { label: "Atamalarım", path: "/evaluator/assignments", icon: ClipboardCheck },
+  { label: "Raporlar", path: "/admin/reports", icon: FileBarChart },
+];
+
 const evaluatorNavigation = [
   { label: "Genel Bakış", path: "/evaluator/dashboard", icon: LayoutDashboard },
   { label: "Atamalarım", path: "/evaluator/assignments", icon: ClipboardCheck },
 ];
+
+export function getAllowedRolesForShell(
+  role: "ADMIN" | "TRAINING_MANAGER" | "EVALUATOR"
+): Array<"ADMIN" | "TRAINING_MANAGER" | "EVALUATOR"> {
+  if (role === "ADMIN") return ["ADMIN"];
+  if (role === "TRAINING_MANAGER") return ["ADMIN", "TRAINING_MANAGER"];
+  return ["ADMIN", "EVALUATOR"];
+}
+
+function getRoleLabel(role: "ADMIN" | "TRAINING_MANAGER" | "EVALUATOR") {
+  if (role === "ADMIN") return "Yönetici";
+  if (role === "TRAINING_MANAGER") return "Eğitim Yöneticisi";
+  return "Değerlendirici";
+}
 
 export function formatDate(value?: Date | string | null) {
   if (!value) return "—";
@@ -43,7 +65,7 @@ export function StatusBadge({ status }: { status?: string | null }) {
   return <Badge variant="outline" className={cn("font-medium border", style.className)}>{style.label}</Badge>;
 }
 
-export function AppShell({ children, role }: { children: React.ReactNode; role: "ADMIN" | "EVALUATOR" }) {
+export function AppShell({ children, role }: { children: React.ReactNode; role: "ADMIN" | "TRAINING_MANAGER" | "EVALUATOR" }) {
   const { user, loading, logout } = useAuth();
   const [location, setLocation] = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -51,15 +73,18 @@ export function AppShell({ children, role }: { children: React.ReactNode; role: 
   const notifications = trpc.notifications.list.useQuery(undefined, { enabled: Boolean(user) });
   const markRead = trpc.notifications.markRead.useMutation({ onSuccess: () => notifications.refetch() });
   const unreadCount = useMemo(() => notifications.data?.filter(item => !item.isRead).length ?? 0, [notifications.data]);
-  const items = role === "ADMIN" ? adminNavigation : evaluatorNavigation;
+  const items = role === "ADMIN" ? adminNavigation : role === "TRAINING_MANAGER" ? trainingManagerNavigation : evaluatorNavigation;
+  const allowedRoles = getAllowedRolesForShell(role);
 
   useEffect(() => {
     if (!loading && !user) setLocation("/login");
     if (user?.mustChangePassword && location !== "/change-password") setLocation("/change-password");
-    if (user && user.role !== role && !user.mustChangePassword) setLocation(user.role === "ADMIN" ? "/admin/dashboard" : "/evaluator/dashboard");
-  }, [loading, location, role, setLocation, user]);
+      if (user && !allowedRoles.includes(user.role) && !user.mustChangePassword) {
+      setLocation(user.role === "EVALUATOR" ? "/evaluator/dashboard" : "/admin/dashboard");
+    }
+  }, [allowedRoles, loading, location, role, setLocation, user]);
 
-  if (loading || !user || user.role !== role || user.mustChangePassword) return <div className="min-h-screen grid place-items-center bg-slate-50"><div className="h-9 w-9 rounded-full border-4 border-teal-100 border-t-teal-600 animate-spin" /></div>;
+  if (loading || !user || !allowedRoles.includes(user.role) || user.mustChangePassword) return <div className="min-h-screen grid place-items-center bg-slate-50"><div className="h-9 w-9 rounded-full border-4 border-teal-100 border-t-teal-600 animate-spin" /></div>;
 
   return (
     <div className="min-h-screen bg-[#f5f8fb] text-slate-900">
@@ -74,15 +99,15 @@ export function AppShell({ children, role }: { children: React.ReactNode; role: 
           {items.map(item => { const active = location === item.path || (item.path !== "/admin/dashboard" && item.path !== "/evaluator/dashboard" && location.startsWith(item.path)); const Icon = item.icon; return <button key={item.path} onClick={() => { setLocation(item.path); setMobileOpen(false); }} className={cn("group flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-colors", active ? "bg-white/12 text-white shadow-inner" : "text-slate-300 hover:bg-white/7 hover:text-white")}><Icon className={cn("h-4 w-4", active ? "text-teal-300" : "text-slate-400 group-hover:text-teal-200")} /><span>{item.label}</span></button>; })}
         </nav>
         <div className="absolute bottom-0 left-0 right-0 border-t border-white/10 p-4">
-          <button onClick={() => setLocation(role === "ADMIN" ? "/admin/profile" : "/evaluator/profile")} className="flex w-full items-center gap-3 rounded-lg px-2 py-2 text-left hover:bg-white/7"><div className="grid h-9 w-9 place-items-center rounded-full bg-teal-100 text-sm font-semibold text-[#0b385d]">{user.firstName?.[0]}{user.lastName?.[0]}</div><div className="min-w-0"><p className="truncate text-sm font-medium">{user.firstName} {user.lastName}</p><p className="truncate text-xs text-slate-400">{role === "ADMIN" ? "Yönetici" : "Değerlendirici"}</p></div></button>
+          <button onClick={() => setLocation(user.role === "EVALUATOR" ? "/evaluator/profile" : "/admin/profile")} className="flex w-full items-center gap-3 rounded-lg px-2 py-2 text-left hover:bg-white/7"><div className="grid h-9 w-9 place-items-center rounded-full bg-teal-100 text-sm font-semibold text-[#0b385d]">{user.firstName?.[0]}{user.lastName?.[0]}</div><div className="min-w-0"><p className="truncate text-sm font-medium">{user.firstName} {user.lastName}</p><p className="truncate text-xs text-slate-400">{getRoleLabel(user.role)}</p></div></button>
           <button onClick={() => logout()} className="mt-2 flex w-full items-center gap-2 rounded-lg px-2 py-2 text-xs text-slate-300 hover:bg-white/7 hover:text-white"><LogOut className="h-3.5 w-3.5" /> Güvenli çıkış</button>
         </div>
       </aside>
       {mobileOpen && <button aria-label="Menüyü kapat" onClick={() => setMobileOpen(false)} className="fixed inset-0 z-40 bg-slate-950/40 lg:hidden" />}
       <main className="min-h-screen lg:pl-[278px]">
         <header className="sticky top-0 z-30 flex h-[76px] items-center justify-between border-b border-slate-200/80 bg-white/90 px-4 backdrop-blur lg:px-8">
-          <div className="flex items-center gap-3"><button aria-label="Menüyü aç" className="grid h-10 w-10 place-items-center rounded-lg border border-slate-200 text-slate-600 lg:hidden" onClick={() => setMobileOpen(true)}><Menu className="h-5 w-5" /></button><div><p className="text-xs text-slate-500">{role === "ADMIN" ? "Yönetim merkezi" : "Değerlendirme çalışma alanı"}</p><p className="text-sm font-semibold text-[#0b385d]">Hoş geldiniz, {user.firstName}</p></div></div>
-          <div className="relative flex items-center gap-3"><button onClick={() => setNotificationOpen(value => !value)} aria-label="Bildirimler" className="relative grid h-10 w-10 place-items-center rounded-lg border border-slate-200 text-slate-600 hover:border-teal-300 hover:text-teal-700"><Bell className="h-4 w-4" />{unreadCount > 0 && <span className="absolute -right-1 -top-1 grid h-4 min-w-4 place-items-center rounded-full bg-rose-500 px-1 text-[9px] font-bold text-white">{unreadCount}</span>}</button>{notificationOpen && <div className="absolute right-0 top-12 z-50 w-[360px] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl"><div className="border-b border-slate-100 px-4 py-3"><p className="font-semibold text-[#0b385d]">Bildirimler</p></div><div className="max-h-[420px] overflow-auto">{notifications.data?.length ? notifications.data.map(item => <button key={item.id} onClick={() => { if (!item.isRead) markRead.mutate({ id: item.id }); if (item.link) setLocation(item.link); setNotificationOpen(false); }} className={cn("block w-full border-b border-slate-100 px-4 py-3 text-left hover:bg-slate-50", !item.isRead && "bg-teal-50/45")}><div className="flex gap-2"><span className={cn("mt-1.5 h-2 w-2 shrink-0 rounded-full", item.isRead ? "bg-transparent" : "bg-teal-500")} /><div><p className="text-sm font-semibold text-slate-800">{item.title}</p><p className="mt-1 text-xs leading-5 text-slate-500">{item.message}</p></div></div></button>) : <p className="p-6 text-center text-sm text-slate-500">Yeni bildirim bulunmuyor.</p>}</div></div>}<Button variant="outline" size="sm" className="hidden sm:flex gap-2" onClick={() => setLocation(role === "ADMIN" ? "/admin/profile" : "/evaluator/profile")}><Settings className="h-3.5 w-3.5" /> Profil</Button></div>
+          <div className="flex items-center gap-3"><button aria-label="Menüyü aç" className="grid h-10 w-10 place-items-center rounded-lg border border-slate-200 text-slate-600 lg:hidden" onClick={() => setMobileOpen(true)}><Menu className="h-5 w-5" /></button><div><p className="text-xs text-slate-500">{user.role === "EVALUATOR" ? "Değerlendirme çalışma alanı" : "Yönetim merkezi"}</p><p className="text-sm font-semibold text-[#0b385d]">Hoş geldiniz, {user.firstName}</p></div></div>
+          <div className="relative flex items-center gap-3"><button onClick={() => setNotificationOpen(value => !value)} aria-label="Bildirimler" className="relative grid h-10 w-10 place-items-center rounded-lg border border-slate-200 text-slate-600 hover:border-teal-300 hover:text-teal-700"><Bell className="h-4 w-4" />{unreadCount > 0 && <span className="absolute -right-1 -top-1 grid h-4 min-w-4 place-items-center rounded-full bg-rose-500 px-1 text-[9px] font-bold text-white">{unreadCount}</span>}</button>{notificationOpen && <div className="absolute right-0 top-12 z-50 w-[360px] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl"><div className="border-b border-slate-100 px-4 py-3"><p className="font-semibold text-[#0b385d]">Bildirimler</p></div><div className="max-h-[420px] overflow-auto">{notifications.data?.length ? notifications.data.map(item => <button key={item.id} onClick={() => { if (!item.isRead) markRead.mutate({ id: item.id }); if (item.link) setLocation(item.link); setNotificationOpen(false); }} className={cn("block w-full border-b border-slate-100 px-4 py-3 text-left hover:bg-slate-50", !item.isRead && "bg-teal-50/45")}><div className="flex gap-2"><span className={cn("mt-1.5 h-2 w-2 shrink-0 rounded-full", item.isRead ? "bg-transparent" : "bg-teal-500")} /><div><p className="text-sm font-semibold text-slate-800">{item.title}</p><p className="mt-1 text-xs leading-5 text-slate-500">{item.message}</p></div></div></button>) : <p className="p-6 text-center text-sm text-slate-500">Yeni bildirim bulunmuyor.</p>}</div></div>}<Button variant="outline" size="sm" className="hidden sm:flex gap-2" onClick={() => setLocation(user.role === "EVALUATOR" ? "/evaluator/profile" : "/admin/profile")}><Settings className="h-3.5 w-3.5" /> Profil</Button></div>
         </header>
         <div className="mx-auto max-w-[1600px] p-4 lg:p-8">{children}</div>
       </main>
