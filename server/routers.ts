@@ -27,7 +27,11 @@ import {
   aggregateCompletedEvaluations,
   calculateEvaluationScores,
 } from "./evaluationMath";
-import { createCriteriaChartData } from "./dashboardChartData";
+import {
+  createCriteriaChartData,
+  filterActiveTrainingIds,
+  filterDashboardRecordsForActiveTrainings,
+} from "./dashboardChartData";
 import { storagePut } from "./storage";
 import { systemRouter } from "./_core/systemRouter";
 import {
@@ -422,11 +426,18 @@ export const appRouter = router({
                 ? 365
                 : null;
         const cutoff = days ? new Date(Date.now() - days * 86400000) : null;
-        const completed = cutoff
-          ? allCompleted.filter(
-              item => item.submittedAt && item.submittedAt >= cutoff
-            )
-          : allCompleted;
+        const activeTrainingIds = filterActiveTrainingIds(allTrainings);
+        const activeAssignments = allAssignments.filter(assignment =>
+          activeTrainingIds.has(assignment.trainingId)
+        );
+        const completed = filterDashboardRecordsForActiveTrainings(
+          cutoff
+            ? allCompleted.filter(
+                item => item.submittedAt && item.submittedAt >= cutoff
+              )
+            : allCompleted,
+          activeTrainingIds
+        );
         const completedAssignmentIds = new Set(
           completed.map(item => item.assignmentId)
         );
@@ -458,7 +469,7 @@ export const appRouter = router({
           user => user.role === "EVALUATOR"
         );
         const evaluatorCompletion = evaluatorUsers.map(user => {
-          const assigned = allAssignments.filter(
+          const assigned = activeAssignments.filter(
             item => item.evaluatorId === user.id
           );
           return {
@@ -471,20 +482,23 @@ export const appRouter = router({
               : 0,
           };
         });
+        const activeTrainings = allTrainings.filter(training =>
+          activeTrainingIds.has(training.id)
+        );
         return {
           cards: {
-            totalTrainings: allTrainings.length,
-            activeAssignments: allAssignments.filter(
+            totalTrainings: activeTrainings.length,
+            activeAssignments: activeAssignments.filter(
               item => !completedAssignmentIds.has(item.id)
             ).length,
             completedEvaluations: completed.length,
-            pendingEvaluations: allAssignments.filter(
+            pendingEvaluations: activeAssignments.filter(
               item => !completedAssignmentIds.has(item.id)
             ).length,
             successfulTrainings: successfulTrainings.size,
             unsuccessfulTrainings: unsuccessfulTrainings.size,
-            completionRate: allAssignments.length
-              ? (completed.length / allAssignments.length) * 100
+            completionRate: activeAssignments.length
+              ? (completed.length / activeAssignments.length) * 100
               : 0,
           },
           charts: {
@@ -775,12 +789,30 @@ export const appRouter = router({
         .mutation(async ({ ctx, input }) => {
           const db = await getDb();
           if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+          const training = (
+            await db
+              .select()
+              .from(trainings)
+              .where(eq(trainings.id, input.id))
+              .limit(1)
+          )[0];
+          if (!training)
+            throw new TRPCError({
+              code: "NOT_FOUND",
+              message: "Eğitim bulunamadı.",
+            });
+          const nextStatus = training.status === "ARCHIVED" ? "ACTIVE" : "ARCHIVED";
           await db
             .update(trainings)
-            .set({ status: "ARCHIVED" })
+            .set({ status: nextStatus })
             .where(eq(trainings.id, input.id));
-          await audit(ctx.user.id, "TRAINING_ARCHIVED", "TRAINING", input.id);
-          return { success: true };
+          await audit(
+            ctx.user.id,
+            nextStatus === "ARCHIVED" ? "TRAINING_ARCHIVED" : "TRAINING_REACTIVATED",
+            "TRAINING",
+            input.id
+          );
+          return { success: true, status: nextStatus };
         }),
       detail: adminProcedure
         .input(z.object({ id: z.number().int().positive() }))

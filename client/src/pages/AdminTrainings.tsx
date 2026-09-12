@@ -100,8 +100,10 @@ function TrainingList({
   const trainingsQuery = trpc.admin.trainings.list.useQuery();
   const usersQuery = trpc.admin.users.list.useQuery({ activeOnly: true });
   const archive = trpc.admin.trainings.archive.useMutation({
-    onSuccess: () => {
-      toast.success("Eğitim arşivlendi.");
+    onSuccess: data => {
+      toast.success(
+        data.status === "ARCHIVED" ? "Eğitim pasifleştirildi." : "Eğitim aktifleştirildi."
+      );
       utils.admin.trainings.list.invalidate();
     },
     onError: error => toast.error(error.message),
@@ -271,14 +273,24 @@ function TrainingList({
                           <Button
                             variant="outline"
                             size="icon"
-                            aria-label="Arşivle"
-                            disabled={
-                              training.status === "ARCHIVED" ||
-                              archive.isPending
+                            aria-label={
+                              training.status === "ARCHIVED"
+                                ? "Aktifleştir"
+                                : "Pasifleştir"
                             }
+                            title={
+                              training.status === "ARCHIVED"
+                                ? "Eğitimi aktifleştir"
+                                : "Eğitimi pasifleştir"
+                            }
+                            disabled={archive.isPending}
                             onClick={() => archive.mutate({ id: training.id })}
                           >
-                            <Archive className="h-3.5 w-3.5 text-amber-700" />
+                            {training.status === "ARCHIVED" ? (
+                              <RotateCcw className="h-3.5 w-3.5 text-emerald-700" />
+                            ) : (
+                              <Archive className="h-3.5 w-3.5 text-amber-700" />
+                            )}
                           </Button>
                         </div>
                       </td>
