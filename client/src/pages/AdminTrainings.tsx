@@ -485,6 +485,11 @@ function TrainingList({
                                       {downloadingSetKey === `${training.id}-${row.setId}` ? "Hazırlanıyor" : "PDF önizle"}
                                     </Button>
                                   </div>
+                                  <p className="mt-1 text-[11px] font-medium text-slate-600">
+                                    {row.summary?.completedCount ?? 0} / {row.summary?.assignedCount ?? 0} tamamlandı
+                                    {" · "}
+                                    {row.summary?.pendingCount ?? 0} bekliyor
+                                  </p>
                                   <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-slate-500">
                                     <span>
                                       Başarı ortalaması: <strong className="text-slate-700">

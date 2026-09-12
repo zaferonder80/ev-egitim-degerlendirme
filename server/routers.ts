@@ -931,6 +931,9 @@ export const appRouter = router({
                   ? setCompleted.reduce((sum, item) => sum + (item.totalScore ?? 0), 0) / setCompleted.length
                   : null;
                 return [setId, {
+                  assignedCount: setAssignments.length,
+                  completedCount: setCompleted.length,
+                  pendingCount: setAssignments.length - setCompleted.length,
                   averageTotal,
                   successStatus:
                     averageTotal === null
