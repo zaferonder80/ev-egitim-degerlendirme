@@ -56,7 +56,7 @@ export async function seedDevelopmentData() {
   ];
   for (const training of trainingSeed) {
     await db.insert(trainings)
-      .values({ ...training, createdById: admin.id, evaluationStartDate: now, publishDate: now, lastUpdatedDate: now })
+      .values({ ...training, createdById: admin.id, publishDate: now, lastUpdatedDate: now })
       .onConflictDoUpdate({
         target: trainings.code,
         set: { title: training.title, status: training.status, evaluationEndDate: training.evaluationEndDate },

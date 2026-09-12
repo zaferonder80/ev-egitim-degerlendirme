@@ -440,7 +440,6 @@ function TrainingInfoPanel({
     version: string;
     publishDate: Date | null;
     lastUpdatedDate: Date | null;
-    evaluationStartDate: Date | null;
     evaluationEndDate: Date | null;
   };
 }) {
@@ -513,11 +512,9 @@ function TrainingInfoPanel({
               </div>
               <div className="sm:col-span-2">
                 <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  Değerlendirme dönemi
+                  Değerlendirme son tarihi
                 </dt>
-                <dd className="mt-1 text-sm text-slate-700">
-                  {formatDate(training.evaluationStartDate)} - {formatDate(training.evaluationEndDate)}
-                </dd>
+                <dd className="mt-1 text-sm text-slate-700">{formatDate(training.evaluationEndDate)}</dd>
               </div>
             </dl>
           </CardContent>

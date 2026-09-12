@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createCriteriaChartData, filterActiveTrainingIds, filterDashboardRecordsForActiveTrainings } from "./dashboardChartData";
+import { createCriteriaChartData, filterActiveTrainingIds, filterDashboardRecordsForActiveTrainings, filterTrainingsByType } from "./dashboardChartData";
 
 describe("createCriteriaChartData", () => {
   it("grafik etiketi, puanı ve kriter metnini birlikte üretir", () => {
@@ -30,5 +30,15 @@ describe("createCriteriaChartData", () => {
       [{ trainingId: 1 }, { trainingId: 2 }, { trainingId: 3 }],
       activeTrainingIds
     )).toEqual([{ trainingId: 1 }, { trainingId: 3 }]);
+  });
+
+  it("seçili eğitim müdürlüğü için eğitimleri filtreler", () => {
+    expect(filterTrainingsByType([
+      { id: 1, status: "ACTIVE", trainingType: "Ürün" },
+      { id: 2, status: "ACTIVE", trainingType: "Üretim" },
+      { id: 3, status: "DRAFT", trainingType: "Destek" },
+    ], "Ürün")).toEqual([
+      { id: 1, status: "ACTIVE", trainingType: "Ürün" },
+    ]);
   });
 });

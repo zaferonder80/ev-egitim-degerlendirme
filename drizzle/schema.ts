@@ -104,7 +104,6 @@ export const trainings = sqliteTable(
     version: text("version", { length: 64 }).default("1.0").notNull(),
     publishDate: integer("publishDate", { mode: "timestamp_ms" }),
     lastUpdatedDate: integer("lastUpdatedDate", { mode: "timestamp_ms" }),
-    evaluationStartDate: integer("evaluationStartDate", { mode: "timestamp_ms" }),
     evaluationEndDate: integer("evaluationEndDate", { mode: "timestamp_ms" }),
     status: text("status", { enum: trainingStatuses }).default("DRAFT").notNull(),
     createdById: integer("createdById").notNull().references(() => users.id),

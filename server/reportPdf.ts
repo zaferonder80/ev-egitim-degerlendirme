@@ -53,18 +53,18 @@ export async function buildTrainingEvaluationPdf(trainingId: number): Promise<Bu
     tableRow([{ text: "Hedef kitle", width: 150 }, { text: text(training.targetAudience), width: 341 }]);
     tableRow([{ text: "Sorumlu", width: 150 }, { text: text(training.contentOwner), width: 341 }], true);
     tableRow([{ text: "Süre", width: 150 }, { text: training.durationMinutes ? `${training.durationMinutes} dakika` : "—", width: 341 }]);
-    tableRow([{ text: "Değerlendirme dönemi", width: 150 }, { text: `${dateText(training.evaluationStartDate)} — ${dateText(training.evaluationEndDate)}`, width: 341 }], true);
+    tableRow([{ text: "Değerlendirme son tarihi", width: 150 }, { text: dateText(training.evaluationEndDate), width: 341 }], true);
     doc.moveDown(1.3); sectionTitle("Değerlendirme Özeti");
     tableRow([{ text: "Atanan değerlendirici", width: 245, align: "center" }, { text: "Tamamlanan değerlendirme", width: 246, align: "center" }], true);
     tableRow([{ text: String(assessmentRows.length), width: 245, align: "center" }, { text: String(completed.length), width: 246, align: "center" }]);
     tableRow([{ text: "Ortalama toplam puan", width: 245, align: "center" }, { text: "Başarı durumu", width: 246, align: "center" }], true);
-    tableRow([{ text: completed.length ? `${averageTotal.toFixed(2)} / 40` : "—", width: 245, align: "center" }, { text: completed.length ? (averageTotal / 40 * 100 >= 70 ? "Başarılı" : "Başarısız") : "Henüz sonuç yok", width: 246, align: "center" }]);
+    tableRow([{ text: completed.length ? `${averageTotal.toFixed(2)} / 100` : "—", width: 245, align: "center" }, { text: completed.length ? (averageTotal >= 70 ? "Başarılı" : "Başarısız") : "Henüz sonuç yok", width: 246, align: "center" }]);
     startPage(); doc.fillColor("#0B385D").fontSize(13).text("Kriter Bazlı Sonuçlar"); doc.moveDown(0.5);
     tableRow([{ text: "Kriter", width: 280 }, { text: "Ort. puan", width: 100, align: "center" }, { text: "Açıklama", width: 111 }], true);
     criteriaRows.forEach(criterion => { const values = completed.map(row => responseMap.get(row.evaluation!.id)?.get(criterion.id)?.score).filter((value): value is number => typeof value === "number"); const average = values.length ? (values.reduce((sum, value) => sum + value, 0) / values.length).toFixed(2) : "—"; tableRow([{ text: `${criterion.orderNumber}. ${criterion.name}`, width: 280 }, { text: average, width: 100, align: "center" }, { text: values.length ? `${values.length} yanıt` : "Yanıt yok", width: 111 }]); });
     startPage(); doc.fillColor("#0B385D").fontSize(13).text("Değerlendirici Bazlı Sonuçlar"); doc.moveDown(0.5);
     tableRow([{ text: "Değerlendirici", width: 190 }, { text: "Durum", width: 95 }, { text: "Puan", width: 70, align: "center" }, { text: "Genel yorum", width: 136 }], true);
-    assessmentRows.forEach(row => { const evaluation = row.evaluation; tableRow([{ text: `${row.evaluator.firstName} ${row.evaluator.lastName}`, width: 190 }, { text: evaluation?.status === "COMPLETED" ? "Tamamlandı" : row.assignment.status === "DRAFT" ? "Taslak" : "Bekliyor", width: 95 }, { text: evaluation?.totalScore == null ? "—" : `${evaluation.totalScore}/40`, width: 70, align: "center" }, { text: text(evaluation?.generalComment), width: 136 }]); });
+    assessmentRows.forEach(row => { const evaluation = row.evaluation; tableRow([{ text: `${row.evaluator.firstName} ${row.evaluator.lastName}`, width: 190 }, { text: evaluation?.status === "COMPLETED" ? "Tamamlandı" : row.assignment.status === "DRAFT" ? "Taslak" : "Bekliyor", width: 95 }, { text: evaluation?.totalScore == null ? "—" : `${evaluation.totalScore}/100`, width: 70, align: "center" }, { text: text(evaluation?.generalComment), width: 136 }]); });
     startPage(); doc.fillColor("#0B385D").fontSize(13).text("Kriter Bazlı Değerlendirici Yorumları"); doc.moveDown(0.5); doc.fillColor("#475569").fontSize(9).text("Yalnızca kayıtlı yorumlar listelenir. Her yorum, kriteri ve değerlendiricisiyle birlikte sunulur."); doc.moveDown(0.8);
     criteriaRows.forEach(criterion => {
       const comments = completed.flatMap(row => {

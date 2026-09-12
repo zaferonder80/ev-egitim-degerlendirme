@@ -110,7 +110,6 @@ function ensureSqliteSchema(sqlite: Database.Database) {
       version TEXT NOT NULL DEFAULT '1.0',
       publishDate INTEGER,
       lastUpdatedDate INTEGER,
-      evaluationStartDate INTEGER,
       evaluationEndDate INTEGER,
       status TEXT NOT NULL DEFAULT 'DRAFT',
       createdById INTEGER NOT NULL,

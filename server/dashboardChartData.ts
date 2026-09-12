@@ -14,7 +14,13 @@ export type CriterionChartPoint = {
 export type DashboardTrainingLike = {
   id: number;
   status: "DRAFT" | "ACTIVE" | "ARCHIVED";
+  trainingType?: string | null;
 };
+
+export function filterTrainingsByType<T extends DashboardTrainingLike>(trainings: T[], trainingType: string | null | undefined): T[] {
+  if (!trainingType) return trainings;
+  return trainings.filter(training => training.trainingType === trainingType);
+}
 
 export function filterActiveTrainingIds<T extends DashboardTrainingLike>(trainings: T[]): Set<number> {
   return new Set(

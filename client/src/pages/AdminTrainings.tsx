@@ -1,8 +1,10 @@
 import { AppShell, formatDate, StatusBadge } from "@/components/AppShell";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { formatScoreValue } from "@shared/score";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Textarea } from "@/components/ui/textarea";
 import { trpc } from "@/lib/trpc";
 import {
@@ -14,10 +16,11 @@ import {
   ImageUp,
   Plus,
   RotateCcw,
+  Search,
   Upload,
   UsersRound,
 } from "lucide-react";
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { useLocation, useRoute } from "wouter";
 
@@ -25,7 +28,7 @@ type TrainingFormState = {
   code: string;
   title: string;
   description: string;
-  trainingType: string;
+  trainingType: "Ürün" | "Üretim" | "Destek" | "";
   targetAudience: string;
   learningObjectives: string;
   durationMinutes: string;
@@ -36,10 +39,10 @@ type TrainingFormState = {
   version: string;
   publishDate: string;
   lastUpdatedDate: string;
-  evaluationStartDate: string;
   evaluationEndDate: string;
   status: "DRAFT" | "ACTIVE" | "ARCHIVED";
 };
+const TRAINING_TYPES = ["Ürün", "Üretim", "Destek"] as const;
 const blankForm: TrainingFormState = {
   code: "",
   title: "",
@@ -55,7 +58,6 @@ const blankForm: TrainingFormState = {
   version: "1.0",
   publishDate: "",
   lastUpdatedDate: "",
-  evaluationStartDate: "",
   evaluationEndDate: "",
   status: "DRAFT",
 };
@@ -64,6 +66,39 @@ const toInputDate = (value?: Date | null) =>
 const optional = (value: string) => value.trim() || null;
 const toDate = (value: string) =>
   value ? new Date(`${value}T12:00:00`) : null;
+
+type TrainingSearchFilters = {
+  code: string;
+  title: string;
+  trainingType: string;
+  targetAudience: string;
+  learningObjectives: string;
+  durationMinutes: string;
+  contentOwner: string;
+  version: string;
+  publishDate: string;
+  lastUpdatedDate: string;
+  evaluationEndDate: string;
+  status: "DRAFT" | "ACTIVE" | "ARCHIVED" | "";
+};
+
+const blankFilters: TrainingSearchFilters = {
+  code: "",
+  title: "",
+  trainingType: "",
+  targetAudience: "",
+  learningObjectives: "",
+  durationMinutes: "",
+  contentOwner: "",
+  version: "",
+  publishDate: "",
+  lastUpdatedDate: "",
+  evaluationEndDate: "",
+  status: "",
+};
+
+const valueMatches = (value: string | null | undefined, query: string) =>
+  value?.toLocaleLowerCase("tr-TR").includes(query.toLocaleLowerCase("tr-TR")) ?? false;
 
 export default function AdminTrainings() {
   const [, setLocation] = useLocation();
@@ -120,6 +155,9 @@ function TrainingList({
     id: number;
     title: string;
   } | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [showAdvancedSearch, setShowAdvancedSearch] = useState(false);
+  const [advancedFilters, setAdvancedFilters] = useState<TrainingSearchFilters>(blankFilters);
   const [evaluatorIds, setEvaluatorIds] = useState<number[]>([]);
   const [evaluationSetId, setEvaluationSetId] = useState<number | "">("");
   const [dueDate, setDueDate] = useState("");
@@ -133,6 +171,42 @@ function TrainingList({
   const completedEvaluatorIds = new Set(
     assigningTraining?.completedEvaluatorIds ?? []
   );
+  const filteredTrainings = useMemo(() => {
+    if (!trainingsQuery.data) return [];
+
+    const normalizedQuery = searchQuery.trim();
+
+    return trainingsQuery.data.filter(training => {
+      const matchesQuickSearch =
+        !normalizedQuery ||
+        [
+          training.title,
+          training.code,
+          training.trainingType,
+          training.targetAudience,
+          training.contentOwner,
+          training.version,
+        ].some(value => valueMatches(value, normalizedQuery));
+
+      if (!matchesQuickSearch) return false;
+
+      const filters = advancedFilters;
+      if (filters.code && !valueMatches(training.code, filters.code)) return false;
+      if (filters.title && !valueMatches(training.title, filters.title)) return false;
+      if (filters.trainingType && training.trainingType !== filters.trainingType) return false;
+      if (filters.targetAudience && !valueMatches(training.targetAudience, filters.targetAudience)) return false;
+      if (filters.learningObjectives && !valueMatches(training.learningObjectives, filters.learningObjectives)) return false;
+      if (filters.durationMinutes && Number(training.durationMinutes ?? 0) !== Number(filters.durationMinutes)) return false;
+      if (filters.contentOwner && !valueMatches(training.contentOwner, filters.contentOwner)) return false;
+      if (filters.version && !valueMatches(training.version, filters.version)) return false;
+      if (filters.publishDate && toInputDate(training.publishDate) !== filters.publishDate) return false;
+      if (filters.lastUpdatedDate && toInputDate(training.lastUpdatedDate) !== filters.lastUpdatedDate) return false;
+      if (filters.evaluationEndDate && toInputDate(training.evaluationEndDate) !== filters.evaluationEndDate) return false;
+      if (filters.status && training.status !== filters.status) return false;
+
+      return true;
+    });
+  }, [advancedFilters, searchQuery, trainingsQuery.data]);
   const allEvaluatorsSelected =
     evaluators.length > 0 &&
     evaluators.every(evaluator => evaluatorIds.includes(evaluator.id));
@@ -205,6 +279,93 @@ function TrainingList({
           <Plus className="h-4 w-4" /> Yeni eğitim
         </Button>
       </div>
+      <div className="mt-7 rounded-2xl border border-slate-200 bg-white shadow-sm">
+        <div className="border-b border-slate-200 p-4">
+          <div className="flex flex-col gap-3 md:flex-row md:items-center">
+            <div className="relative flex-1">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+              <Input
+                placeholder="Eğitim adı, kodu, müdürlük, hedef kitle, sorumlu..."
+                value={searchQuery}
+                onChange={event => setSearchQuery(event.target.value)}
+                className="pl-9"
+              />
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setShowAdvancedSearch(current => !current)}
+            >
+              Detaylı arama
+            </Button>
+          </div>
+          {showAdvancedSearch && (
+            <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
+              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                <div className="space-y-2">
+                  <Label htmlFor="advanced-code">Eğitim kodu</Label>
+                  <Input id="advanced-code" value={advancedFilters.code} onChange={event => setAdvancedFilters(current => ({ ...current, code: event.target.value }))} />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="advanced-title">Eğitim adı</Label>
+                  <Input id="advanced-title" value={advancedFilters.title} onChange={event => setAdvancedFilters(current => ({ ...current, title: event.target.value }))} />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="advanced-type">Eğitim müdürlüğü</Label>
+                  <select id="advanced-type" value={advancedFilters.trainingType} onChange={event => setAdvancedFilters(current => ({ ...current, trainingType: event.target.value }))} className="h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100">
+                    <option value="">Tümü</option>
+                    {(["Ürün", "Üretim", "Destek"] as const).map(option => (
+                      <option key={option} value={option}>{option}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="advanced-audience">Hedef kitle</Label>
+                  <Input id="advanced-audience" value={advancedFilters.targetAudience} onChange={event => setAdvancedFilters(current => ({ ...current, targetAudience: event.target.value }))} />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="advanced-owner">Sorumlu</Label>
+                  <Input id="advanced-owner" value={advancedFilters.contentOwner} onChange={event => setAdvancedFilters(current => ({ ...current, contentOwner: event.target.value }))} />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="advanced-duration">Süre (dakika)</Label>
+                  <Input id="advanced-duration" type="number" min="1" value={advancedFilters.durationMinutes} onChange={event => setAdvancedFilters(current => ({ ...current, durationMinutes: event.target.value }))} />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="advanced-version">Sürüm</Label>
+                  <Input id="advanced-version" value={advancedFilters.version} onChange={event => setAdvancedFilters(current => ({ ...current, version: event.target.value }))} />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="advanced-learning">Öğrenme hedefi</Label>
+                  <Input id="advanced-learning" value={advancedFilters.learningObjectives} onChange={event => setAdvancedFilters(current => ({ ...current, learningObjectives: event.target.value }))} />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="advanced-publish">Yayın tarihi</Label>
+                  <Input id="advanced-publish" type="date" value={advancedFilters.publishDate} onChange={event => setAdvancedFilters(current => ({ ...current, publishDate: event.target.value }))} />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="advanced-end">Değerlendirme son tarihi</Label>
+                  <Input id="advanced-end" type="date" value={advancedFilters.evaluationEndDate} onChange={event => setAdvancedFilters(current => ({ ...current, evaluationEndDate: event.target.value }))} />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="advanced-status">Durum</Label>
+                  <select id="advanced-status" value={advancedFilters.status} onChange={event => setAdvancedFilters(current => ({ ...current, status: event.target.value as TrainingSearchFilters["status"] }))} className="h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100">
+                    <option value="">Tümü</option>
+                    <option value="DRAFT">Taslak</option>
+                    <option value="ACTIVE">Aktif</option>
+                    <option value="ARCHIVED">Arşivlenmiş</option>
+                  </select>
+                </div>
+              </div>
+              <div className="mt-4 flex justify-end gap-2">
+                <Button type="button" variant="outline" onClick={() => setAdvancedFilters(blankFilters)}>
+                  Temizle
+                </Button>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
       <Card className="mt-7 border-slate-200 shadow-sm">
         <CardContent className="p-0">
           <div className="overflow-x-auto">
@@ -212,6 +373,7 @@ function TrainingList({
               <thead className="border-b border-slate-200 bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
                 <tr>
                   <th className="px-6 py-4 font-semibold">Eğitim</th>
+                  <th className="px-4 py-4 font-semibold">Müdürlük</th>
                   <th className="px-4 py-4 font-semibold">Durum</th>
                   <th className="px-4 py-4 font-semibold">Atama</th>
                   <th className="px-4 py-4 font-semibold">Ortalama</th>
@@ -225,14 +387,14 @@ function TrainingList({
                 {trainingsQuery.isLoading ? (
                   <tr>
                     <td
-                      colSpan={6}
+                      colSpan={7}
                       className="px-6 py-12 text-center text-slate-500"
                     >
                       Eğitimler yükleniyor…
                     </td>
                   </tr>
-                ) : trainingsQuery.data?.length ? (
-                  trainingsQuery.data.map(training => (
+                ) : filteredTrainings.length ? (
+                  filteredTrainings.map(training => (
                     <tr key={training.id} className="hover:bg-slate-50/70">
                       <td className="px-6 py-4">
                         <p className="font-semibold text-[#0b385d]">
@@ -244,6 +406,11 @@ function TrainingList({
                           </span>{" "}
                           · Sürüm {training.version}
                         </p>
+                      </td>
+                      <td className="px-4 py-4">
+                        <span className="inline-flex rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-700">
+                          {training.trainingType ?? "—"}
+                        </span>
                       </td>
                       <td className="px-4 py-4">
                         <StatusBadge status={training.status} />
@@ -262,7 +429,7 @@ function TrainingList({
                         ) : (
                           <>
                             <p className="font-semibold text-slate-700">
-                              {training.averageTotal.toFixed(1)} / 40
+                              {formatScoreValue(training.averageTotal, 1)}
                             </p>
                             <StatusBadge status={training.successStatus} />
                           </>
@@ -326,14 +493,15 @@ function TrainingList({
                   ))
                 ) : (
                   <tr>
-                    <td colSpan={6} className="px-6 py-16 text-center">
+                    <td colSpan={7} className="px-6 py-16 text-center">
                       <ClipboardPlus className="mx-auto h-8 w-8 text-slate-300" />
                       <p className="mt-3 font-medium text-slate-700">
-                        Henüz eğitim bulunmuyor.
+                        {trainingsQuery.data?.length ? "Arama kriterlerine uygun eğitim bulunamadı." : "Henüz eğitim bulunmuyor."}
                       </p>
                       <p className="mt-1 text-sm text-slate-500">
-                        İlk eğitim kaydını oluşturarak değerlendirme sürecini
-                        başlatın.
+                        {trainingsQuery.data?.length
+                          ? "Filtreleri temizleyip tekrar deneyin."
+                          : "İlk eğitim kaydını oluşturarak değerlendirme sürecini başlatın."}
                       </p>
                     </td>
                   </tr>
@@ -473,7 +641,7 @@ function TrainingEditor({ onExit }: { onExit: () => void }) {
         code: existing.code,
         title: existing.title,
         description: existing.description ?? "",
-        trainingType: existing.trainingType ?? "",
+        trainingType: (existing.trainingType as TrainingFormState["trainingType"]) ?? "",
         targetAudience: existing.targetAudience ?? "",
         learningObjectives: existing.learningObjectives ?? "",
         durationMinutes: existing.durationMinutes?.toString() ?? "",
@@ -484,7 +652,6 @@ function TrainingEditor({ onExit }: { onExit: () => void }) {
         version: existing.version,
         publishDate: toInputDate(existing.publishDate),
         lastUpdatedDate: toInputDate(existing.lastUpdatedDate),
-        evaluationStartDate: toInputDate(existing.evaluationStartDate),
         evaluationEndDate: toInputDate(existing.evaluationEndDate),
         status: existing.status,
       });
@@ -554,11 +721,12 @@ function TrainingEditor({ onExit }: { onExit: () => void }) {
         Number(form.durationMinutes) < 1)
     )
       return toast.error("Süre pozitif tam sayı olmalıdır.");
+    if (!form.trainingType) return toast.error("Eğitim Müdürlüğü alanı zorunludur.");
     const input = {
       code,
       title,
       description: optional(form.description),
-      trainingType: optional(form.trainingType),
+      trainingType: form.trainingType,
       targetAudience: optional(form.targetAudience),
       learningObjectives: optional(form.learningObjectives),
       durationMinutes: form.durationMinutes
@@ -571,25 +739,15 @@ function TrainingEditor({ onExit }: { onExit: () => void }) {
       version: form.version.trim(),
       publishDate: toDate(form.publishDate),
       lastUpdatedDate: toDate(form.lastUpdatedDate),
-      evaluationStartDate: toDate(form.evaluationStartDate),
       evaluationEndDate: toDate(form.evaluationEndDate),
       status: form.status,
     };
-    if (
-      input.evaluationStartDate &&
-      input.evaluationEndDate &&
-      input.evaluationStartDate > input.evaluationEndDate
-    )
-      return toast.error(
-        "Değerlendirme başlangıç tarihi bitiş tarihinden sonra olamaz."
-      );
     if (id) update.mutate({ id, ...input });
     else create.mutate({ ...input, evaluatorIds: [] });
   };
   const fields: Array<[keyof TrainingFormState, string, string, boolean]> = [
     ["code", "Eğitim kodu", "text", true],
     ["title", "Eğitim adı", "text", true],
-    ["trainingType", "Eğitim türü", "text", false],
     ["targetAudience", "Hedef kitle", "text", false],
     ["durationMinutes", "Süre (dakika)", "number", false],
     ["contentOwner", "Sorumlu", "text", false],
@@ -597,7 +755,6 @@ function TrainingEditor({ onExit }: { onExit: () => void }) {
     ["trainingUrl", "Eğitim bağlantısı", "text", false],
     ["publishDate", "Yayın tarihi", "date", false],
     ["lastUpdatedDate", "Son güncelleme", "date", false],
-    ["evaluationStartDate", "Değerlendirme başlangıcı", "date", false],
     ["evaluationEndDate", "Değerlendirme son tarihi", "date", false],
   ];
   return (
@@ -619,6 +776,24 @@ function TrainingEditor({ onExit }: { onExit: () => void }) {
         <Card className="border-slate-200 shadow-sm">
           <CardContent className="p-6">
             <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+              <div className="space-y-3 md:col-span-2 xl:col-span-3">
+                <Label className="text-base font-medium">
+                  Eğitim Müdürlüğü <span className="text-rose-600">*</span>
+                </Label>
+                <RadioGroup
+                  value={form.trainingType}
+                  onValueChange={value => change("trainingType", value as TrainingFormState["trainingType"])}
+                  className="flex flex-wrap gap-4"
+                  required
+                >
+                  {TRAINING_TYPES.map(option => (
+                    <label key={option} className="flex items-center gap-2 text-sm font-medium text-slate-700">
+                      <RadioGroupItem value={option} id={`trainingType-${option}`} />
+                      <span>{option}</span>
+                    </label>
+                  ))}
+                </RadioGroup>
+              </div>
               {fields.map(([field, label, type, required]) => (
                 <div key={field} className="space-y-2">
                   <Label htmlFor={field}>
@@ -834,7 +1009,6 @@ function TrainingDetail({
               <div>
                 <dt className="text-slate-500">Değerlendirme dönemi</dt>
                 <dd className="mt-1 font-medium text-slate-700">
-                  {formatDate(training.evaluationStartDate)} —{" "}
                   {formatDate(training.evaluationEndDate)}
                 </dd>
               </div>
@@ -885,7 +1059,7 @@ function TrainingDetail({
                           <span className="text-slate-400">—</span>
                         ) : (
                           <span className="font-semibold text-slate-700">
-                            {item.evaluation.totalScore}/40 ·{" "}
+                            {formatScoreValue(item.evaluation.totalScore, 1)} ·{" "}
                             {item.evaluation.successPercentage?.toFixed(0)}%
                           </span>
                         )}

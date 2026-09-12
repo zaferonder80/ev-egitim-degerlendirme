@@ -185,7 +185,10 @@ const trainingInput = z.object({
     ),
   title: z.string().trim().min(2).max(300),
   description: z.string().max(10000).optional().nullable(),
-  trainingType: z.string().max(120).optional().nullable(),
+  trainingType: z.string().trim().max(120).refine(
+    value => ["Ürün", "Üretim", "Destek"].includes(value),
+    { message: "Eğitim Müdürlüğü alanı zorunludur." }
+  ),
   targetAudience: z.string().max(500).optional().nullable(),
   learningObjectives: z.string().max(10000).optional().nullable(),
   durationMinutes: z.number().int().min(1).max(100000).optional().nullable(),
@@ -196,20 +199,19 @@ const trainingInput = z.object({
   version: z.string().trim().min(1).max(64),
   publishDate: z.date().optional().nullable(),
   lastUpdatedDate: z.date().optional().nullable(),
-  evaluationStartDate: z.date().optional().nullable(),
   evaluationEndDate: z.date().optional().nullable(),
   status: trainingStatus,
 });
 
 function validateTrainingDates(input: z.infer<typeof trainingInput>) {
   if (
-    input.evaluationStartDate &&
     input.evaluationEndDate &&
-    input.evaluationStartDate > input.evaluationEndDate
+    input.publishDate &&
+    input.publishDate > input.evaluationEndDate
   ) {
     throw new TRPCError({
       code: "BAD_REQUEST",
-      message: "Değerlendirme başlangıç tarihi bitiş tarihinden sonra olamaz.",
+      message: "Yayın tarihi değerlendirme bitiş tarihinden sonra olamaz.",
     });
   }
 }
@@ -576,6 +578,7 @@ export const appRouter = router({
               .enum(["ALL", "30_DAYS", "90_DAYS", "YEAR"])
               .default("ALL"),
             evaluationSetId: z.number().int().positive().nullable().optional(),
+            trainingType: z.string().trim().max(120).nullable().optional(),
           })
           .optional()
       )
@@ -588,6 +591,9 @@ export const appRouter = router({
           db.select().from(evaluations).where(eq(evaluations.status, "COMPLETED")),
           db.select().from(users),
         ]);
+        const filteredTrainings = input?.trainingType
+          ? allTrainings.filter(training => training.trainingType === input.trainingType)
+          : allTrainings;
         const days =
           input?.period === "30_DAYS"
             ? 30
@@ -597,7 +603,7 @@ export const appRouter = router({
                 ? 365
                 : null;
         const cutoff = days ? new Date(Date.now() - days * 86400000) : null;
-        const activeTrainingIds = filterActiveTrainingIds(allTrainings);
+        const activeTrainingIds = filterActiveTrainingIds(filteredTrainings);
         const activeAssignments = allAssignments.filter(
           assignment =>
             activeTrainingIds.has(assignment.trainingId) &&
@@ -663,7 +669,7 @@ export const appRouter = router({
               : 0,
           };
         });
-        const activeTrainings = allTrainings.filter(training => activeTrainingIds.has(training.id));
+        const activeTrainings = filteredTrainings.filter(training => activeTrainingIds.has(training.id));
         return {
           cards: {
             totalTrainings: activeTrainings.length,
@@ -869,11 +875,11 @@ export const appRouter = router({
               pendingCount: matches.length - completed.length,
               averageTotal,
               successPercentage:
-                averageTotal === null ? null : (averageTotal / 40) * 100,
+                averageTotal === null ? null : averageTotal,
               successStatus:
                 averageTotal === null
                   ? null
-                  : (averageTotal / 40) * 100 >= 70
+                  : averageTotal >= 70
                     ? "SUCCESSFUL"
                     : "UNSUCCESSFUL",
             };
