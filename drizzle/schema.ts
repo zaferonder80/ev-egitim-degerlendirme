@@ -58,6 +58,34 @@ export const criteria = sqliteTable("criteria", {
   updatedAt: integer("updatedAt", { mode: "timestamp_ms" }).defaultNow().notNull(),
 });
 
+export const evaluationSets = sqliteTable("evaluationSets", {
+  id: integer("id", { mode: "number" }).primaryKey({ autoIncrement: true }),
+  name: text("name", { length: 200 }).notNull(),
+  description: text("description"),
+  rubricScale: text("rubricScale", { mode: "json" }).$type<Record<string, string>>().notNull(),
+  passingScore: real("passingScore").default(70).notNull(),
+  isActive: integer("isActive", { mode: "boolean" }).default(true).notNull(),
+  createdAt: integer("createdAt", { mode: "timestamp_ms" }).defaultNow().notNull(),
+  updatedAt: integer("updatedAt", { mode: "timestamp_ms" }).defaultNow().notNull(),
+});
+
+export const evaluationSetCriteria = sqliteTable(
+  "evaluationSetCriteria",
+  {
+    id: integer("id", { mode: "number" }).primaryKey({ autoIncrement: true }),
+    evaluationSetId: integer("evaluationSetId").notNull().references(() => evaluationSets.id, { onDelete: "cascade" }),
+    criterionId: integer("criterionId").notNull().references(() => criteria.id, { onDelete: "cascade" }),
+    weight: real("weight").notNull(),
+    sortOrder: integer("sortOrder").default(0).notNull(),
+    createdAt: integer("createdAt", { mode: "timestamp_ms" }).defaultNow().notNull(),
+    updatedAt: integer("updatedAt", { mode: "timestamp_ms" }).defaultNow().notNull(),
+  },
+  table => [
+    uniqueIndex("uq_evaluation_set_criterion").on(table.evaluationSetId, table.criterionId),
+    index("idx_evaluation_set_criteria_set").on(table.evaluationSetId),
+  ],
+);
+
 export const trainings = sqliteTable(
   "trainings",
   {
@@ -92,6 +120,7 @@ export const assignments = sqliteTable(
     id: integer("id", { mode: "number" }).primaryKey({ autoIncrement: true }),
     trainingId: integer("trainingId").notNull().references(() => trainings.id, { onDelete: "cascade" }),
     evaluatorId: integer("evaluatorId").notNull().references(() => users.id),
+    evaluationSetId: integer("evaluationSetId").references(() => evaluationSets.id, { onDelete: "set null" }),
     assignedById: integer("assignedById").notNull().references(() => users.id),
     assignedAt: integer("assignedAt", { mode: "timestamp_ms" }).notNull(),
     dueDate: integer("dueDate", { mode: "timestamp_ms" }).notNull(),
@@ -103,7 +132,7 @@ export const assignments = sqliteTable(
     updatedAt: integer("updatedAt", { mode: "timestamp_ms" }).defaultNow().notNull(),
   },
   table => [
-    uniqueIndex("uq_assignment_training_evaluator").on(table.trainingId, table.evaluatorId),
+    uniqueIndex("uq_assignment_training_evaluator_set").on(table.trainingId, table.evaluatorId, table.evaluationSetId),
     index("idx_assignment_evaluator_status").on(table.evaluatorId, table.status),
     index("idx_assignment_due").on(table.dueDate),
   ],
@@ -178,6 +207,9 @@ export const auditLogs = sqliteTable(
 
 export type User = typeof users.$inferSelect;
 export type InsertUser = typeof users.$inferInsert;
+export type EvaluationSet = typeof evaluationSets.$inferSelect;
+export type InsertEvaluationSet = typeof evaluationSets.$inferInsert;
+export type EvaluationSetCriterion = typeof evaluationSetCriteria.$inferSelect;
 export type Training = typeof trainings.$inferSelect;
 export type Assignment = typeof assignments.$inferSelect;
 export type Evaluation = typeof evaluations.$inferSelect;

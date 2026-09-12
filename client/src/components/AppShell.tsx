@@ -11,6 +11,7 @@ const adminNavigation = [
   { label: "Genel Bakış", path: "/admin/dashboard", icon: LayoutDashboard },
   { label: "Eğitimler", path: "/admin/trainings", icon: BookOpenCheck },
   { label: "Kriter Yönetimi", path: "/admin/criteria", icon: ListChecks },
+  { label: "Değerlendirme Setleri", path: "/admin/evaluation-sets", icon: ClipboardCheck },
   { label: "Kullanıcılar", path: "/admin/users", icon: Users },
   { label: "Raporlar", path: "/admin/reports", icon: FileBarChart },
   { label: "Denetim Kayıtları", path: "/admin/audit-logs", icon: ShieldCheck },

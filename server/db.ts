@@ -3,8 +3,17 @@ import path from "node:path";
 import Database from "better-sqlite3";
 import { and, eq, gt } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/better-sqlite3";
-import { criteria, sessions, users, type InsertUser } from "../drizzle/schema";
+import {
+  assignments,
+  criteria,
+  evaluationSetCriteria,
+  evaluationSets,
+  sessions,
+  users,
+  type InsertUser,
+} from "../drizzle/schema";
 import { DEFAULT_CRITERIA } from "./defaultCriteria";
+import { DEFAULT_EVALUATION_SETS } from "./defaultEvaluationSets";
 
 const sqliteFile = process.env.DATABASE_URL ?? "./data/app.db";
 
@@ -18,15 +27,6 @@ if (!normalizedSqlitePath.startsWith(":memory:")) {
 }
 
 function ensureSqliteSchema(sqlite: Database.Database) {
-  const tables = sqlite
-    .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'")
-    .all() as Array<{ name: string }>;
-  const existing = new Set(tables.map(table => table.name));
-
-  if (existing.has("users") && existing.has("sessions") && existing.has("criteria")) {
-    return;
-  }
-
   sqlite.exec(`
     CREATE TABLE IF NOT EXISTS users (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -70,6 +70,30 @@ function ensureSqliteSchema(sqlite: Database.Database) {
       updatedAt INTEGER NOT NULL DEFAULT (strftime('%s','now') * 1000)
     );
 
+    CREATE TABLE IF NOT EXISTS evaluationSets (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      description TEXT,
+      rubricScale TEXT NOT NULL,
+      passingScore REAL NOT NULL DEFAULT 70,
+      isActive INTEGER NOT NULL DEFAULT 1,
+      createdAt INTEGER NOT NULL DEFAULT (strftime('%s','now') * 1000),
+      updatedAt INTEGER NOT NULL DEFAULT (strftime('%s','now') * 1000)
+    );
+
+    CREATE TABLE IF NOT EXISTS evaluationSetCriteria (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      evaluationSetId INTEGER NOT NULL,
+      criterionId INTEGER NOT NULL,
+      weight REAL NOT NULL,
+      sortOrder INTEGER NOT NULL DEFAULT 0,
+      createdAt INTEGER NOT NULL DEFAULT (strftime('%s','now') * 1000),
+      updatedAt INTEGER NOT NULL DEFAULT (strftime('%s','now') * 1000),
+      UNIQUE(evaluationSetId, criterionId),
+      FOREIGN KEY (evaluationSetId) REFERENCES evaluationSets(id) ON DELETE CASCADE,
+      FOREIGN KEY (criterionId) REFERENCES criteria(id) ON DELETE CASCADE
+    );
+
     CREATE TABLE IF NOT EXISTS trainings (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       code TEXT NOT NULL UNIQUE,
@@ -99,6 +123,7 @@ function ensureSqliteSchema(sqlite: Database.Database) {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       trainingId INTEGER NOT NULL,
       evaluatorId INTEGER NOT NULL,
+      evaluationSetId INTEGER,
       assignedById INTEGER NOT NULL,
       assignedAt INTEGER NOT NULL,
       dueDate INTEGER NOT NULL,
@@ -108,9 +133,10 @@ function ensureSqliteSchema(sqlite: Database.Database) {
       reopenedById INTEGER,
       createdAt INTEGER NOT NULL DEFAULT (strftime('%s','now') * 1000),
       updatedAt INTEGER NOT NULL DEFAULT (strftime('%s','now') * 1000),
-      UNIQUE(trainingId, evaluatorId),
+      UNIQUE(trainingId, evaluatorId, evaluationSetId),
       FOREIGN KEY (trainingId) REFERENCES trainings(id) ON DELETE CASCADE,
       FOREIGN KEY (evaluatorId) REFERENCES users(id),
+      FOREIGN KEY (evaluationSetId) REFERENCES evaluationSets(id) ON DELETE SET NULL,
       FOREIGN KEY (assignedById) REFERENCES users(id),
       FOREIGN KEY (reopenedById) REFERENCES users(id)
     );
@@ -189,6 +215,8 @@ function ensureSqliteSchema(sqlite: Database.Database) {
 
 let _db: ReturnType<typeof drizzle> | null = null;
 
+export { assignments };
+
 export async function getDb() {
   if (!_db) {
     const sqlite = new Database(normalizedSqlitePath);
@@ -207,6 +235,139 @@ export async function getDb() {
           isActive: true,
         }))
       );
+    }
+
+    const evaluationSetColumns = sqlite.prepare("PRAGMA table_info(evaluationSets)").all() as Array<{ name: string }>;
+    if (!evaluationSetColumns.some(column => column.name === "passingScore")) {
+      sqlite.exec("ALTER TABLE evaluationSets ADD COLUMN passingScore REAL NOT NULL DEFAULT 70;");
+    }
+
+    const assignmentColumns = sqlite.prepare("PRAGMA table_info(assignments)").all() as Array<{ name: string }>;
+    if (!assignmentColumns.some(column => column.name === "evaluationSetId")) {
+      sqlite.exec("ALTER TABLE assignments ADD COLUMN evaluationSetId INTEGER REFERENCES evaluationSets(id) ON DELETE SET NULL;");
+    }
+
+    const hasAssignmentsTable = Boolean(
+      sqlite.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'assignments'").get()
+    );
+    const hasLegacyTable = Boolean(
+      sqlite
+        .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'assignments_legacy'")
+        .get()
+    );
+
+    const assignmentSql = sqlite
+      .prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'assignments'")
+      .get() as { sql: string } | undefined;
+    const hasLegacyAssignmentConstraint = Boolean(
+      assignmentSql?.sql?.includes("UNIQUE(trainingId, evaluatorId)") &&
+      !assignmentSql.sql.includes("UNIQUE(trainingId, evaluatorId, evaluationSetId)")
+    );
+
+    if (hasLegacyTable) {
+      sqlite.exec(`
+        PRAGMA foreign_keys = OFF;
+        CREATE TABLE IF NOT EXISTS assignments_new (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          trainingId INTEGER NOT NULL,
+          evaluatorId INTEGER NOT NULL,
+          evaluationSetId INTEGER,
+          assignedById INTEGER NOT NULL,
+          assignedAt INTEGER NOT NULL,
+          dueDate INTEGER NOT NULL,
+          status TEXT NOT NULL DEFAULT 'PENDING',
+          completedAt INTEGER,
+          reopenedAt INTEGER,
+          reopenedById INTEGER,
+          createdAt INTEGER NOT NULL DEFAULT (strftime('%s','now') * 1000),
+          updatedAt INTEGER NOT NULL DEFAULT (strftime('%s','now') * 1000),
+          UNIQUE(trainingId, evaluatorId, evaluationSetId),
+          FOREIGN KEY (trainingId) REFERENCES trainings(id) ON DELETE CASCADE,
+          FOREIGN KEY (evaluatorId) REFERENCES users(id),
+          FOREIGN KEY (evaluationSetId) REFERENCES evaluationSets(id) ON DELETE SET NULL,
+          FOREIGN KEY (assignedById) REFERENCES users(id),
+          FOREIGN KEY (reopenedById) REFERENCES users(id)
+        );
+        INSERT OR IGNORE INTO assignments_new (
+          id, trainingId, evaluatorId, evaluationSetId, assignedById, assignedAt, dueDate, status, completedAt, reopenedAt, reopenedById, createdAt, updatedAt
+        )
+        SELECT
+          id, trainingId, evaluatorId, evaluationSetId, assignedById, assignedAt, dueDate, status, completedAt, reopenedAt, reopenedById, createdAt, updatedAt
+        FROM assignments_legacy;
+        INSERT OR IGNORE INTO assignments_new (
+          id, trainingId, evaluatorId, evaluationSetId, assignedById, assignedAt, dueDate, status, completedAt, reopenedAt, reopenedById, createdAt, updatedAt
+        )
+        SELECT
+          id, trainingId, evaluatorId, evaluationSetId, assignedById, assignedAt, dueDate, status, completedAt, reopenedAt, reopenedById, createdAt, updatedAt
+        FROM assignments;
+        DROP TABLE assignments_legacy;
+        DROP TABLE assignments;
+        ALTER TABLE assignments_new RENAME TO assignments;
+        PRAGMA foreign_keys = ON;
+      `);
+    } else if (hasLegacyAssignmentConstraint && hasAssignmentsTable) {
+      sqlite.exec(`
+        PRAGMA foreign_keys = OFF;
+        ALTER TABLE assignments RENAME TO assignments_legacy;
+        CREATE TABLE assignments (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          trainingId INTEGER NOT NULL,
+          evaluatorId INTEGER NOT NULL,
+          evaluationSetId INTEGER,
+          assignedById INTEGER NOT NULL,
+          assignedAt INTEGER NOT NULL,
+          dueDate INTEGER NOT NULL,
+          status TEXT NOT NULL DEFAULT 'PENDING',
+          completedAt INTEGER,
+          reopenedAt INTEGER,
+          reopenedById INTEGER,
+          createdAt INTEGER NOT NULL DEFAULT (strftime('%s','now') * 1000),
+          updatedAt INTEGER NOT NULL DEFAULT (strftime('%s','now') * 1000),
+          UNIQUE(trainingId, evaluatorId, evaluationSetId),
+          FOREIGN KEY (trainingId) REFERENCES trainings(id) ON DELETE CASCADE,
+          FOREIGN KEY (evaluatorId) REFERENCES users(id),
+          FOREIGN KEY (evaluationSetId) REFERENCES evaluationSets(id) ON DELETE SET NULL,
+          FOREIGN KEY (assignedById) REFERENCES users(id),
+          FOREIGN KEY (reopenedById) REFERENCES users(id)
+        );
+        INSERT INTO assignments (
+          id, trainingId, evaluatorId, evaluationSetId, assignedById, assignedAt, dueDate, status, completedAt, reopenedAt, reopenedById, createdAt, updatedAt
+        )
+        SELECT
+          id, trainingId, evaluatorId, evaluationSetId, assignedById, assignedAt, dueDate, status, completedAt, reopenedAt, reopenedById, createdAt, updatedAt
+        FROM assignments_legacy;
+        DROP TABLE assignments_legacy;
+        PRAGMA foreign_keys = ON;
+      `);
+    }
+
+    const existingEvaluationSets = await _db.select().from(evaluationSets).limit(1);
+    if (existingEvaluationSets.length === 0) {
+      const criterionRows = await _db.select().from(criteria);
+      const criterionMap = new Map(criterionRows.map(criterion => [criterion.name, criterion]));
+      for (const setTemplate of DEFAULT_EVALUATION_SETS) {
+        const setResult = await _db.insert(evaluationSets).values({
+          name: setTemplate.name,
+          description: setTemplate.description,
+          rubricScale: setTemplate.rubricScale,
+          passingScore: setTemplate.passingScore,
+          isActive: true,
+        });
+        const setId = Number(setResult.lastInsertRowid ?? 0);
+        const items = setTemplate.criteria.map(item => {
+          const criterion = criterionMap.get(item.name);
+          if (!criterion) return null;
+          return {
+            evaluationSetId: setId,
+            criterionId: criterion.id,
+            weight: item.weight,
+            sortOrder: 0,
+          };
+        }).filter(Boolean) as Array<{ evaluationSetId: number; criterionId: number; weight: number; sortOrder: number }>;
+        if (items.length > 0) {
+          await _db.insert(evaluationSetCriteria).values(items);
+        }
+      }
     }
   }
   return _db;

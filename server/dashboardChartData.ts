@@ -19,7 +19,7 @@ export type DashboardTrainingLike = {
 export function filterActiveTrainingIds<T extends DashboardTrainingLike>(trainings: T[]): Set<number> {
   return new Set(
     trainings
-      .filter(training => training.status === "ACTIVE")
+      .filter(training => training.status !== "ARCHIVED")
       .map(training => training.id)
   );
 }

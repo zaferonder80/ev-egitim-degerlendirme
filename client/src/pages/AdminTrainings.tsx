@@ -121,7 +121,10 @@ function TrainingList({
     title: string;
   } | null>(null);
   const [evaluatorIds, setEvaluatorIds] = useState<number[]>([]);
+  const [evaluationSetId, setEvaluationSetId] = useState<number | "">("");
   const [dueDate, setDueDate] = useState("");
+  const evaluationSetsQuery = trpc.admin.evaluationSets.list.useQuery();
+  const activeEvaluationSets = evaluationSetsQuery.data?.filter(set => set.isActive) ?? [];
   const evaluators =
     usersQuery.data?.filter(user => user.role === "EVALUATOR") ?? [];
   const assigningTraining = assigning
@@ -133,26 +136,52 @@ function TrainingList({
   const allEvaluatorsSelected =
     evaluators.length > 0 &&
     evaluators.every(evaluator => evaluatorIds.includes(evaluator.id));
-  const toggleAllEvaluators = () =>
-    setEvaluatorIds(
-      allEvaluatorsSelected
-        ? Array.from(completedEvaluatorIds)
-        : evaluators.map(evaluator => evaluator.id)
-    );
-  useEffect(() => {
+  const syncEvaluatorIdsForSet = (nextSetId: number | "") => {
+    setEvaluationSetId(nextSetId);
     if (!assigning) return;
-    const training = trainingsQuery.data?.find(
-      item => item.id === assigning.id
+    const training = trainingsQuery.data?.find(item => item.id === assigning.id);
+    setEvaluatorIds(
+      nextSetId === ""
+        ? []
+        : training?.assignedEvaluatorIdsBySet?.[String(nextSetId)] ?? []
     );
-    if (training) setEvaluatorIds(training.evaluatorIds);
-  }, [assigning, trainingsQuery.data]);
+  };
+  const toggleEvaluator = (evaluatorId: number, checked: boolean) => {
+    if (completedEvaluatorIds.has(evaluatorId)) return;
+    setEvaluatorIds(current => {
+      if (checked) {
+        return current.includes(evaluatorId)
+          ? current
+          : [...current, evaluatorId];
+      }
+      return current.filter(id => id !== evaluatorId);
+    });
+  };
+  const toggleAllEvaluators = () => {
+    if (allEvaluatorsSelected) {
+      setEvaluatorIds(current =>
+        current.filter(id => !evaluators.some(evaluator => evaluator.id === id))
+      );
+      return;
+    }
+    const nextIds = evaluators
+      .filter(evaluator => !completedEvaluatorIds.has(evaluator.id))
+      .map(evaluator => evaluator.id);
+    setEvaluatorIds(current => {
+      const merged = [...current, ...nextIds];
+      return merged.filter((id, index) => merged.indexOf(id) === index);
+    });
+  };
   const submitAssignment = (event: FormEvent) => {
     event.preventDefault();
     if (!assigning || !dueDate)
       return toast.error("Son tarih seçin.");
+    if (evaluationSetId === "")
+      return toast.error("Değerlendirme seti seçin.");
     assign.mutate({
       trainingId: assigning.id,
       evaluatorIds,
+      evaluationSetId: Number(evaluationSetId),
       dueDate: new Date(`${dueDate}T12:00:00`),
     });
   };
@@ -258,14 +287,13 @@ function TrainingList({
                             className="gap-1.5"
                             disabled={training.status === "ARCHIVED"}
                             onClick={() => {
+                              const firstSetId = activeEvaluationSets[0]?.id;
                               setAssigning({
                                 id: training.id,
                                 title: training.title,
                               });
-                              setEvaluatorIds(training.evaluatorIds);
-                              setDueDate(
-                                toInputDate(training.evaluationEndDate)
-                              );
+                              setDueDate(toInputDate(training.evaluationEndDate));
+                              syncEvaluatorIdsForSet(firstSetId ?? "");
                             }}
                           >
                             <UsersRound className="h-3.5 w-3.5" /> Ata
@@ -333,10 +361,31 @@ function TrainingList({
               <button
                 type="button"
                 className="text-sm text-slate-500 hover:text-slate-900"
-                onClick={() => setAssigning(null)}
+                onClick={() => {
+                  setAssigning(null);
+                  setEvaluationSetId("");
+                  setEvaluatorIds([]);
+                  setDueDate("");
+                }}
               >
                 Kapat
               </button>
+            </div>
+            <div className="mt-6">
+              <Label>Değerlendirme seti</Label>
+              <select
+                value={evaluationSetId}
+                onChange={event => {
+                  const nextSetId = event.target.value === "" ? "" : Number(event.target.value);
+                  syncEvaluatorIdsForSet(nextSetId);
+                }}
+                className="mt-2 h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100"
+              >
+                <option value="">Set seçilmedi</option>
+                {evaluationSetsQuery.data?.filter(set => set.isActive).map(set => (
+                  <option key={set.id} value={set.id}>{set.name}</option>
+                ))}
+              </select>
             </div>
             <div className="mt-6">
               <Label>Son tarih</Label>
@@ -376,11 +425,7 @@ function TrainingList({
                       disabled={completedEvaluatorIds.has(evaluator.id)}
                       checked={evaluatorIds.includes(evaluator.id)}
                       onChange={event =>
-                        setEvaluatorIds(
-                          event.target.checked
-                            ? [...evaluatorIds, evaluator.id]
-                            : evaluatorIds.filter(id => id !== evaluator.id)
-                        )
+                        toggleEvaluator(evaluator.id, event.target.checked)
                       }
                     />
                     <span className="text-sm text-slate-700">

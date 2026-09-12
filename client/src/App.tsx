@@ -4,6 +4,7 @@ import NotFound from "@/pages/NotFound";
 import AdminAuditLogs from "@/pages/AdminAuditLogs";
 import AdminDashboard from "@/pages/AdminDashboard";
 import AdminCriteria from "@/pages/AdminCriteria";
+import AdminEvaluationSets from "@/pages/AdminEvaluationSets";
 import AdminTrainings from "@/pages/AdminTrainings";
 import AdminUsers from "@/pages/AdminUsers";
 import ChangePassword from "@/pages/ChangePassword";
@@ -29,6 +30,7 @@ function Router() {
       <Route path={"/admin/trainings/:id"} component={AdminTrainings} />
       <Route path={"/admin/trainings"} component={AdminTrainings} />
       <Route path={"/admin/criteria"} component={AdminCriteria} />
+      <Route path={"/admin/evaluation-sets"} component={AdminEvaluationSets} />
       <Route path={"/admin/users"} component={AdminUsers} />
       <Route path={"/admin/reports"} component={AdminReports} />
       <Route path={"/admin/audit-logs"} component={AdminAuditLogs} />

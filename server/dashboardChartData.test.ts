@@ -25,10 +25,10 @@ describe("createCriteriaChartData", () => {
       { id: 3, status: "DRAFT" },
     ]);
 
-    expect([...activeTrainingIds]).toEqual([1]);
+    expect([...activeTrainingIds]).toEqual([1, 3]);
     expect(filterDashboardRecordsForActiveTrainings(
       [{ trainingId: 1 }, { trainingId: 2 }, { trainingId: 3 }],
       activeTrainingIds
-    )).toEqual([{ trainingId: 1 }]);
+    )).toEqual([{ trainingId: 1 }, { trainingId: 3 }]);
   });
 });

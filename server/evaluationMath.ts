@@ -5,7 +5,7 @@ export type EvaluationScoreSummary = {
   successStatus: "SUCCESSFUL" | "UNSUCCESSFUL";
 };
 
-export function calculateEvaluationScores(scores: number[]): EvaluationScoreSummary {
+export function calculateEvaluationScores(scores: number[], passingScore = 70): EvaluationScoreSummary {
   if (scores.length !== 8 || scores.some(score => !Number.isInteger(score) || score < 1 || score > 5)) {
     throw new Error("Değerlendirme sekiz adet, 1 ile 5 arasında tam sayı puan içermelidir.");
   }
@@ -16,7 +16,24 @@ export function calculateEvaluationScores(scores: number[]): EvaluationScoreSumm
     totalScore,
     averageScore,
     successPercentage,
-    successStatus: successPercentage >= 70 ? "SUCCESSFUL" : "UNSUCCESSFUL",
+    successStatus: successPercentage >= passingScore ? "SUCCESSFUL" : "UNSUCCESSFUL",
+  };
+}
+
+export function calculateWeightedEvaluationScores(criteria: Array<{ score: number; weight: number }>, passingScore = 70): EvaluationScoreSummary {
+  if (criteria.length === 0) {
+    throw new Error("En az bir kriter puanlanmalıdır.");
+  }
+
+  const totalWeight = criteria.reduce((sum, criterion) => sum + criterion.weight, 0);
+  const weightedTotal = criteria.reduce((sum, criterion) => sum + ((criterion.score / 5) * criterion.weight), 0);
+  const successPercentage = (weightedTotal / totalWeight) * 100;
+
+  return {
+    totalScore: Math.round(weightedTotal),
+    averageScore: weightedTotal / criteria.length,
+    successPercentage,
+    successStatus: successPercentage >= passingScore ? "SUCCESSFUL" : "UNSUCCESSFUL",
   };
 }
 
