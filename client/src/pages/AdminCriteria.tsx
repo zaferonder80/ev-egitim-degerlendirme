@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { trpc } from "@/lib/trpc";
-import { Plus, Trash2 } from "lucide-react";
+import { Plus, RotateCcw, Trash2 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 
@@ -37,6 +37,14 @@ export default function AdminCriteria() {
   const remove = trpc.admin.criteria.remove.useMutation({
     onSuccess: () => {
       toast.success("Kriter pasifleştirildi.");
+      utils.admin.criteria.list.invalidate();
+      utils.admin.dashboard.invalidate();
+    },
+    onError: error => toast.error(error.message),
+  });
+  const restore = trpc.admin.criteria.restore.useMutation({
+    onSuccess: () => {
+      toast.success("Kriter tekrar aktifleştirildi.");
       utils.admin.criteria.list.invalidate();
       utils.admin.dashboard.invalidate();
     },
@@ -150,16 +158,26 @@ export default function AdminCriteria() {
                       <StatusBadge status={criterion.isActive ? "ACTIVE" : "ARCHIVED"} />
                     </td>
                     <td className="px-6 py-4">
-                      <div className="flex justify-end">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="gap-2 text-rose-600 hover:text-rose-700"
-                          onClick={() => remove.mutate({ id: criterion.id })}
-                          disabled={!criterion.isActive}
-                        >
-                          <Trash2 className="h-3.5 w-3.5" /> Kaldır
-                        </Button>
+                      <div className="flex justify-end gap-2">
+                        {criterion.isActive ? (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="gap-2 text-rose-600 hover:text-rose-700"
+                            onClick={() => remove.mutate({ id: criterion.id })}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" /> Kaldır
+                          </Button>
+                        ) : (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="gap-2 text-emerald-600 hover:text-emerald-700"
+                            onClick={() => restore.mutate({ id: criterion.id })}
+                          >
+                            <RotateCcw className="h-3.5 w-3.5" /> Aktifleştir
+                          </Button>
+                        )}
                       </div>
                     </td>
                   </tr>

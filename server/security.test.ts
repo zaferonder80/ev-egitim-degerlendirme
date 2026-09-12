@@ -46,4 +46,20 @@ describe("sunucu tarafı RBAC", () => {
     await expect(managerCaller.evaluator.assignments()).resolves.toEqual(expect.any(Array));
     await expect(adminCaller.evaluator.assignments()).resolves.toEqual(expect.any(Array));
   });
+
+  it("kaldırılan kriter yeniden etkinleştirilebilir", async () => {
+    const adminCaller = appRouter.createCaller(adminContext());
+
+    const created = await adminCaller.admin.criteria.create({
+      name: "Yeniden etkinleştirilecek kriter",
+      description: "Test amacıyla oluşturulmuştur.",
+      controlPoints: ["Kontrol noktası 1", "Kontrol noktası 2"],
+    });
+
+    await adminCaller.admin.criteria.remove({ id: created.id });
+    await expect(adminCaller.admin.criteria.restore({ id: created.id })).resolves.toEqual({ success: true });
+
+    const list = await adminCaller.admin.criteria.list();
+    expect(list.some(item => item.id === created.id && item.isActive)).toBe(true);
+  });
 });

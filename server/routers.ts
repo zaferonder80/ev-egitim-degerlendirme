@@ -422,6 +422,23 @@ export const appRouter = router({
           });
           return { success: true };
         }),
+      restore: adminProcedure
+        .input(z.object({ id: z.number().int().positive() }))
+        .mutation(async ({ ctx, input }) => {
+          assertNoForcedPasswordChange(ctx.user);
+          const db = await getDb();
+          if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+
+          await db
+            .update(criteria)
+            .set({ isActive: true, updatedAt: new Date() })
+            .where(eq(criteria.id, input.id));
+
+          await audit(ctx.user.id, "CRITERION_RESTORED", "CRITERION", input.id, {
+            restored: true,
+          });
+          return { success: true };
+        }),
     }),
     evaluationSets: router({
       list: trainingManagerProcedure.query(async () => {

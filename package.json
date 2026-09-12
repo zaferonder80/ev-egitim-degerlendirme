@@ -96,6 +96,7 @@
     "@vitejs/plugin-react": "^5.0.4",
     "add": "^2.0.6",
     "autoprefixer": "^10.4.20",
+    "baseline-browser-mapping": "^2.11.23",
     "cross-env": "^7.0.3",
     "drizzle-kit": "^0.31.4",
     "esbuild": "^0.25.0",
@@ -118,5 +119,12 @@
     "overrides": {
       "tailwindcss>nanoid": "3.3.7"
     }
+  },
+  "allowScripts": {
+    "esbuild@0.18.20": true,
+    "esbuild@0.25.12": true,
+    "esbuild@0.28.2": true,
+    "esbuild@0.21.5": true,
+    "better-sqlite3@13.0.3": true
   }
 }
