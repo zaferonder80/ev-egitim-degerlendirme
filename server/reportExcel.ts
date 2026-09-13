@@ -3,6 +3,15 @@ import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import { alias } from "drizzle-orm/sqlite-core";
 import { assignments, criteria, evaluationResponses, evaluations, evaluationSetCriteria, evaluationSets, trainings, users } from "../drizzle/schema";
 import { getDb } from "./db";
+import { calculateWeightedEvaluationScores } from "./evaluationMath";
+
+function getRubricMaxScore(rubricScale?: Record<string, string> | null) {
+  if (!rubricScale) return 5;
+  const scores = Object.keys(rubricScale)
+    .map(key => Number(key))
+    .filter(value => Number.isInteger(value) && value > 0);
+  return scores.length ? Math.max(...scores) : 5;
+}
 
 export async function buildTrainingEvaluationExcel(trainingId: number, evaluationSetId?: number): Promise<Buffer> {
   const db = await getDb();
@@ -257,6 +266,70 @@ export async function buildDetailedReportExcel(filters?: DetailedReportFilters):
     filtered = filtered.filter(r => r.evaluator.isActive === activeBool);
   }
 
+  const evaluationIds = filtered
+    .map(row => row.evaluation?.id)
+    .filter((id): id is number => typeof id === "number");
+  const evaluationSetIds = Array.from(
+    new Set(
+      filtered
+        .map(row => row.assignment.evaluationSetId)
+        .filter((id): id is number => typeof id === "number")
+    )
+  );
+  const [responseRows, setCriterionRows] = await Promise.all([
+    evaluationIds.length
+      ? db
+          .select()
+          .from(evaluationResponses)
+          .where(inArray(evaluationResponses.evaluationId, evaluationIds))
+      : Promise.resolve([]),
+    evaluationSetIds.length
+      ? db
+          .select()
+          .from(evaluationSetCriteria)
+          .where(inArray(evaluationSetCriteria.evaluationSetId, evaluationSetIds))
+      : Promise.resolve([]),
+  ]);
+  const responsesByEvaluation = new Map<number, typeof responseRows>();
+  for (const response of responseRows) {
+    const responses = responsesByEvaluation.get(response.evaluationId) ?? [];
+    responses.push(response);
+    responsesByEvaluation.set(response.evaluationId, responses);
+  }
+  const criteriaBySet = new Map<number, typeof setCriterionRows>();
+  for (const criterion of setCriterionRows) {
+    const criteria = criteriaBySet.get(criterion.evaluationSetId) ?? [];
+    criteria.push(criterion);
+    criteriaBySet.set(criterion.evaluationSetId, criteria);
+  }
+
+  const calculatedPercentageByEvaluation = new Map<number, number>();
+  for (const row of filtered) {
+    if (row.evaluation?.status !== "COMPLETED" || row.evaluation.id == null) continue;
+    const responses = responsesByEvaluation.get(row.evaluation.id) ?? [];
+    const setCriteria = row.assignment.evaluationSetId
+      ? criteriaBySet.get(row.assignment.evaluationSetId) ?? []
+      : [];
+    const weightedCriteria = setCriteria.length
+      ? setCriteria.map(criterion => ({
+          score: responses.find(response => response.criterionId === criterion.criterionId)?.score ?? 0,
+          weight: criterion.weight,
+        }))
+      : responses.map(response => ({
+          score: response.score,
+          weight: 100 / Math.max(responses.length, 1),
+        }));
+    if (!weightedCriteria.length) continue;
+    calculatedPercentageByEvaluation.set(
+      row.evaluation.id,
+      calculateWeightedEvaluationScores(
+        weightedCriteria,
+        Number(row.evaluationSet?.passingScore ?? 70),
+        getRubricMaxScore(row.evaluationSet?.rubricScale ?? null)
+      ).successPercentage
+    );
+  }
+
   const workbook = new ExcelJS.Workbook();
   workbook.creator = "E/V Eğitim İçerik Değerlendirme Sistemi";
   const sheet = workbook.addWorksheet("Detaylı Değerlendirme Raporu", { views: [{ showGridLines: true }] });
@@ -315,14 +388,9 @@ export async function buildDetailedReportExcel(filters?: DetailedReportFilters):
     return isNaN(d.getTime()) ? "—" : d.toLocaleDateString("tr-TR");
   };
 
-  const formatScore = (totalScore: number | null | undefined, avgScore: number | null | undefined) => {
-    if (avgScore != null) {
-      return `${avgScore.toFixed(2)} / 5 (%${(avgScore / 5 * 100).toFixed(0)})`;
-    }
-    if (totalScore != null) {
-      return `${totalScore} / 100`;
-    }
-    return "—";
+  const formatScore = (evaluationId: number | null | undefined) => {
+    const percentage = evaluationId == null ? null : calculatedPercentageByEvaluation.get(evaluationId);
+    return percentage == null ? "—" : `%${percentage.toFixed(2)}`;
   };
 
   const statusLabel = (st: string) => {
@@ -352,7 +420,7 @@ export async function buildDetailedReportExcel(filters?: DetailedReportFilters):
       evaluatorName: row.evaluator.name ?? `${row.evaluator.firstName} ${row.evaluator.lastName}`,
       evaluatorIsActive: row.evaluator.isActive ? "Aktif" : "Pasif",
       status: statusLabel(row.assignment.status),
-      score: formatScore(row.evaluation?.totalScore, row.evaluation?.averageScore),
+      score: formatScore(row.evaluation?.id),
       successStatus: successLabel(row.evaluation?.successStatus),
       generalComment: row.evaluation?.generalComment ?? "—",
       assignedAt: formatDate(row.assignment.assignedAt),

@@ -31,10 +31,11 @@ export function calculateWeightedEvaluationScores(criteria: Array<{ score: numbe
   const totalWeight = criteria.reduce((sum, criterion) => sum + criterion.weight, 0);
   const weightedTotal = criteria.reduce((sum, criterion) => sum + ((criterion.score / maxScore) * criterion.weight), 0);
   const successPercentage = (weightedTotal / totalWeight) * 100;
+  const averageScore = (weightedTotal / totalWeight) * maxScore;
 
   return {
     totalScore: Math.round(weightedTotal),
-    averageScore: weightedTotal / criteria.length,
+    averageScore,
     successPercentage,
     successStatus: successPercentage >= passingScore ? "SUCCESSFUL" : "UNSUCCESSFUL",
   };

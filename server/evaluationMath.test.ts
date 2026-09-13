@@ -28,6 +28,7 @@ describe("calculateEvaluationScores", () => {
     ]);
 
     expect(result.totalScore).toBe(76);
+    expect(result.averageScore).toBeCloseTo(3.8, 5);
     expect(result.successPercentage).toBeCloseTo(76, 5);
     expect(result.successStatus).toBe("SUCCESSFUL");
   });

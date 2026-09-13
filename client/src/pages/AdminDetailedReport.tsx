@@ -95,10 +95,10 @@ export default function AdminDetailedReport() {
     const successful = completed.filter(r => r.successStatus === "SUCCESSFUL");
     const successfulCount = successful.length;
 
-    const scores = completed.map(r => r.averageScore).filter((s): s is number => typeof s === "number");
-    const avgScore = scores.length ? scores.reduce((a, b) => a + b, 0) / scores.length : null;
+    const percentages = completed.map(r => r.successPercentage).filter((percentage): percentage is number => typeof percentage === "number");
+    const avgPercentage = percentages.length ? percentages.reduce((sum, percentage) => sum + percentage, 0) / percentages.length : null;
 
-    return { total, completedCount, completionRate, successfulCount, avgScore };
+    return { total, completedCount, completionRate, successfulCount, avgPercentage };
   }, [filteredRows]);
 
   const downloadExcel = async () => {
@@ -221,9 +221,9 @@ export default function AdminDetailedReport() {
         <Card className="border-slate-200 shadow-sm">
           <CardContent className="flex items-center justify-between p-5">
             <div>
-              <p className="text-xs font-medium text-slate-500">Ortalama Puan (5 üzerinden)</p>
+              <p className="text-xs font-medium text-slate-500">Ortalama puan</p>
               <p className="mt-1 text-2xl font-bold text-[#0b385d]">
-                {stats.avgScore != null ? `${stats.avgScore.toFixed(2)} / 5` : "—"}
+                {stats.avgPercentage != null ? `%${stats.avgPercentage.toFixed(2)}` : "—"}
               </p>
             </div>
             <div className="grid h-11 w-11 place-items-center rounded-2xl bg-indigo-50 text-indigo-700">
@@ -392,10 +392,9 @@ export default function AdminDetailedReport() {
                         </td>
 
                         <td className="px-3 py-3 text-right">
-                          {row.averageScore != null ? (
+                          {row.successPercentage != null ? (
                             <div>
-                              <p className="font-bold text-[#0b385d]">{row.averageScore.toFixed(2)} / 5</p>
-                              <p className="text-[10px] text-teal-700 font-semibold">%{(row.averageScore / 5 * 100).toFixed(0)}</p>
+                              <p className="font-bold text-[#0b385d]">%{row.successPercentage.toFixed(2)}</p>
                             </div>
                           ) : (
                             <span className="text-slate-400">—</span>

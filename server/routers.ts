@@ -1285,7 +1285,72 @@ export const appRouter = router({
           .leftJoin(evaluations, eq(evaluations.assignmentId, assignments.id))
           .orderBy(desc(assignments.assignedAt));
 
-        return rows.map(row => ({
+        const evaluationIds = rows
+          .map(row => row.evaluation?.id)
+          .filter((id): id is number => typeof id === "number");
+        const evaluationSetIds = Array.from(
+          new Set(
+            rows
+              .map(row => row.assignment.evaluationSetId)
+              .filter((id): id is number => typeof id === "number")
+          )
+        );
+        const [responseRows, setCriterionRows] = await Promise.all([
+          evaluationIds.length
+            ? db
+                .select()
+                .from(evaluationResponses)
+                .where(inArray(evaluationResponses.evaluationId, evaluationIds))
+            : Promise.resolve([]),
+          evaluationSetIds.length
+            ? db
+                .select()
+                .from(evaluationSetCriteria)
+                .where(inArray(evaluationSetCriteria.evaluationSetId, evaluationSetIds))
+            : Promise.resolve([]),
+        ]);
+        const responsesByEvaluation = new Map<number, typeof responseRows>();
+        for (const response of responseRows) {
+          const responses = responsesByEvaluation.get(response.evaluationId) ?? [];
+          responses.push(response);
+          responsesByEvaluation.set(response.evaluationId, responses);
+        }
+        const criteriaBySet = new Map<number, typeof setCriterionRows>();
+        for (const criterion of setCriterionRows) {
+          const criteria = criteriaBySet.get(criterion.evaluationSetId) ?? [];
+          criteria.push(criterion);
+          criteriaBySet.set(criterion.evaluationSetId, criteria);
+        }
+
+        return rows.map(row => {
+          const evaluation = row.evaluation;
+          const responses = evaluation?.id
+            ? responsesByEvaluation.get(evaluation.id) ?? []
+            : [];
+          const setCriteria = row.assignment.evaluationSetId
+            ? criteriaBySet.get(row.assignment.evaluationSetId) ?? []
+            : [];
+          const weightedCriteria = setCriteria.length
+            ? setCriteria.map(criterion => ({
+                score:
+                  responses.find(response => response.criterionId === criterion.criterionId)
+                    ?.score ?? 0,
+                weight: criterion.weight,
+              }))
+            : responses.map(response => ({
+                score: response.score,
+                weight: 100 / Math.max(responses.length, 1),
+              }));
+          const calculatedPercentage =
+            evaluation?.status === "COMPLETED" && weightedCriteria.length
+              ? calculateWeightedEvaluationScores(
+                  weightedCriteria,
+                  Number(row.evaluationSet?.passingScore ?? 70),
+                  getRubricMaxScore(row.evaluationSet?.rubricScale ?? null)
+                ).successPercentage
+              : evaluation?.successPercentage ?? null;
+
+          return {
           assignmentId: row.assignment.id,
           assignedAt: row.assignment.assignedAt,
           dueDate: row.assignment.dueDate,
@@ -1310,11 +1375,12 @@ export const appRouter = router({
           evaluationStatus: row.evaluation?.status ?? null,
           totalScore: row.evaluation?.totalScore ?? null,
           averageScore: row.evaluation?.averageScore ?? null,
-          successPercentage: row.evaluation?.successPercentage ?? null,
+          successPercentage: calculatedPercentage,
           successStatus: row.evaluation?.successStatus ?? null,
           generalComment: row.evaluation?.generalComment ?? null,
           submittedAt: row.evaluation?.submittedAt ?? null,
-        }));
+          };
+        });
       }),
     }),
     trainings: router({
