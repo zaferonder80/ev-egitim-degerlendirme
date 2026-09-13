@@ -32,6 +32,21 @@ describe("calculateEvaluationScores", () => {
     expect(result.successStatus).toBe("SUCCESSFUL");
   });
 
+  it("rubrik maksimum puanı 7 ise hesaplama 7 ölçeğine göre yapılır", () => {
+    const result = calculateWeightedEvaluationScores(
+      [
+        { score: 7, weight: 50 },
+        { score: 5, weight: 50 },
+      ],
+      70,
+      7,
+    );
+
+    expect(result.totalScore).toBe(86);
+    expect(result.successPercentage).toBeCloseTo(85.71428571428571, 5);
+    expect(result.successStatus).toBe("SUCCESSFUL");
+  });
+
   it("başarı durumunu değerlendirme setinin baraj puanına göre belirler", () => {
     const criteria = Array.from({ length: 5 }, () => ({ score: 4, weight: 20 }));
 

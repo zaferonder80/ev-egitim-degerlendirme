@@ -5,13 +5,13 @@ export type EvaluationScoreSummary = {
   successStatus: "SUCCESSFUL" | "UNSUCCESSFUL";
 };
 
-export function calculateEvaluationScores(scores: number[], passingScore = 70): EvaluationScoreSummary {
-  if (scores.length !== 8 || scores.some(score => !Number.isInteger(score) || score < 1 || score > 5)) {
-    throw new Error("Değerlendirme sekiz adet, 1 ile 5 arasında tam sayı puan içermelidir.");
+export function calculateEvaluationScores(scores: number[], passingScore = 70, maxScore = 5): EvaluationScoreSummary {
+  if (scores.length !== 8 || scores.some(score => !Number.isInteger(score) || score < 1 || score > maxScore)) {
+    throw new Error(`Değerlendirme sekiz adet, 1 ile ${maxScore} arasında tam sayı puan içermelidir.`);
   }
   const totalScore = scores.reduce((sum, score) => sum + score, 0);
   const averageScore = totalScore / 8;
-  const successPercentage = (totalScore / 40) * 100;
+  const successPercentage = (totalScore / (8 * maxScore)) * 100;
   return {
     totalScore,
     averageScore,
@@ -20,13 +20,16 @@ export function calculateEvaluationScores(scores: number[], passingScore = 70): 
   };
 }
 
-export function calculateWeightedEvaluationScores(criteria: Array<{ score: number; weight: number }>, passingScore = 70): EvaluationScoreSummary {
+export function calculateWeightedEvaluationScores(criteria: Array<{ score: number; weight: number }>, passingScore = 70, maxScore = 5): EvaluationScoreSummary {
   if (criteria.length === 0) {
     throw new Error("En az bir kriter puanlanmalıdır.");
   }
+  if (maxScore <= 0) {
+    throw new Error("Rubrik maksimum puanı pozitif olmalıdır.");
+  }
 
   const totalWeight = criteria.reduce((sum, criterion) => sum + criterion.weight, 0);
-  const weightedTotal = criteria.reduce((sum, criterion) => sum + ((criterion.score / 5) * criterion.weight), 0);
+  const weightedTotal = criteria.reduce((sum, criterion) => sum + ((criterion.score / maxScore) * criterion.weight), 0);
   const successPercentage = (weightedTotal / totalWeight) * 100;
 
   return {

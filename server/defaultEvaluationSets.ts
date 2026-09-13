@@ -16,10 +16,10 @@ export const DEFAULT_EVALUATION_SETS: EvaluationSetTemplate[] = [
     passingScore: 70,
     rubricScale: {
       "1": "Uygun değil",
-      "2": "Geliştirilmesi gerekli",
+      "2": "Gelişmesi gerekli",
       "3": "Kısmen uygun",
       "4": "Uygun",
-      "5": "Özellikle güçlü",
+      "5": "Mükemmel",
     },
     criteria: [
       { name: "Amaç ve hedeflerin netliği", weight: 12.5 },
@@ -37,11 +37,11 @@ export const DEFAULT_EVALUATION_SETS: EvaluationSetTemplate[] = [
     description: "Senaryo tabanlı görev ve performans çıktılarının değerlendirilmesine yönelik set.",
     passingScore: 70,
     rubricScale: {
-      "1": "Beklenen performans yok",
-      "2": "Çok sınırlı performans",
-      "3": "Kısmen yeterli",
-      "4": "Yeterli ve güvenilir",
-      "5": "Mükemmel performans",
+      "1": "Uygun değil",
+      "2": "Gelişmesi gerekli",
+      "3": "Kısmen uygun",
+      "4": "Uygun",
+      "5": "Mükemmel",
     },
     criteria: [
       { name: "İçerik uyumu", weight: 20 },

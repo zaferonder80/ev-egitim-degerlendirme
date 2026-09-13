@@ -11,10 +11,13 @@ const adminNavigation = [
   { label: "Genel Bakış", path: "/admin/dashboard", icon: LayoutDashboard },
   { label: "Eğitimler", path: "/admin/trainings", icon: BookOpenCheck },
   { label: "Atamalarım", path: "/evaluator/assignments", icon: ClipboardCheck },
-  { label: "Kriter Yönetimi", path: "/admin/criteria", icon: ListChecks },
-  { label: "Değerlendirme Setleri", path: "/admin/evaluation-sets", icon: ClipboardCheck },
-  { label: "Kullanıcılar", path: "/admin/users", icon: Users },
   { label: "Raporlar", path: "/admin/reports", icon: FileBarChart },
+];
+
+const adminSettingsNavigation = [
+  { label: "Kullanıcılar", path: "/admin/users", icon: Users },
+  { label: "Değerlendirme Setleri", path: "/admin/evaluation-sets", icon: ClipboardCheck },
+  { label: "Kriter Yönetimi", path: "/admin/criteria", icon: ListChecks },
   { label: "Denetim Kayıtları", path: "/admin/audit-logs", icon: ShieldCheck },
 ];
 
@@ -88,7 +91,7 @@ export function AppShell({ children, role }: { children: React.ReactNode; role: 
 
   return (
     <div className="min-h-screen bg-[#f5f8fb] text-slate-900">
-      <aside className={cn("fixed inset-y-0 left-0 z-50 w-[278px] bg-[#092a47] text-slate-100 transition-transform lg:translate-x-0", mobileOpen ? "translate-x-0" : "-translate-x-full")}>
+      <aside className={cn("fixed inset-y-0 left-0 z-50 flex w-[278px] flex-col bg-[#092a47] text-slate-100 transition-transform lg:translate-x-0", mobileOpen ? "translate-x-0" : "-translate-x-full")}>
         <div className="flex items-center gap-3 px-6 h-[76px] border-b border-white/10">
           <div className="grid h-10 w-10 place-items-center rounded-xl bg-teal-400 text-[#082743] shadow-lg shadow-teal-950/20"><ClipboardCheck className="h-5 w-5" /></div>
           <div className="min-w-0"><p className="text-[10px] tracking-[0.18em] uppercase text-teal-200">E/V Sistemi</p><h1 className="font-semibold text-sm leading-tight">Eğitim Değerlendirme</h1></div>
@@ -98,7 +101,11 @@ export function AppShell({ children, role }: { children: React.ReactNode; role: 
           <p className="px-3 pb-2 text-[10px] font-semibold tracking-[0.16em] uppercase text-slate-400">Yönetim</p>
           {items.map(item => { const active = location === item.path || (item.path !== "/admin/dashboard" && item.path !== "/evaluator/dashboard" && location.startsWith(item.path)); const Icon = item.icon; return <button key={item.path} onClick={() => { setLocation(item.path); setMobileOpen(false); }} className={cn("group flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-colors", active ? "bg-white/12 text-white shadow-inner" : "text-slate-300 hover:bg-white/7 hover:text-white")}><Icon className={cn("h-4 w-4", active ? "text-teal-300" : "text-slate-400 group-hover:text-teal-200")} /><span>{item.label}</span></button>; })}
         </nav>
-        <div className="absolute bottom-0 left-0 right-0 border-t border-white/10 p-4">
+        {user.role === "ADMIN" && <nav className="mt-auto px-3 pb-4 space-y-1" aria-label="Admin ayarları">
+          <p className="px-3 pb-2 text-[10px] font-semibold tracking-[0.16em] uppercase text-slate-400">Admin Ayarları</p>
+          {adminSettingsNavigation.map(item => { const active = location === item.path || location.startsWith(item.path); const Icon = item.icon; return <button key={item.path} onClick={() => { setLocation(item.path); setMobileOpen(false); }} className={cn("group flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-colors", active ? "bg-white/12 text-white shadow-inner" : "text-slate-300 hover:bg-white/7 hover:text-white")}><Icon className={cn("h-4 w-4", active ? "text-teal-300" : "text-slate-400 group-hover:text-teal-200")} /><span>{item.label}</span></button>; })}
+        </nav>}
+        <div className="border-t border-white/10 p-4">
           <button onClick={() => setLocation(user.role === "EVALUATOR" ? "/evaluator/profile" : "/admin/profile")} className="flex w-full items-center gap-3 rounded-lg px-2 py-2 text-left hover:bg-white/7"><div className="grid h-9 w-9 place-items-center rounded-full bg-teal-100 text-sm font-semibold text-[#0b385d]">{user.firstName?.[0]}{user.lastName?.[0]}</div><div className="min-w-0"><p className="truncate text-sm font-medium">{user.firstName} {user.lastName}</p><p className="truncate text-xs text-slate-400">{getRoleLabel(user.role)}</p></div></button>
           <button onClick={() => logout()} className="mt-2 flex w-full items-center gap-2 rounded-lg px-2 py-2 text-xs text-slate-300 hover:bg-white/7 hover:text-white"><LogOut className="h-3.5 w-3.5" /> Güvenli çıkış</button>
         </div>

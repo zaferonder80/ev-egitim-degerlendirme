@@ -1,17 +1,25 @@
 ﻿import { AppShell, StatusBadge, formatDate } from "@/components/AppShell";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useAuth } from "@/_core/hooks/useAuth";
+import { getRubricLabel, getRubricMaxScore } from "@/lib/rubricScale";
 import { trpc } from "@/lib/trpc";
 import {
   CalendarClock,
   CheckCircle2,
+  ChevronDown,
   ChevronLeft,
+  ChevronUp,
   Clock3,
   FileText,
+  RotateCcw,
+  Search,
+  SlidersHorizontal,
+  X,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { useLocation, useRoute } from "wouter";
 
@@ -48,6 +56,122 @@ function AssignmentList({ onOpen }: { onOpen: (id: number) => void }) {
   const { user } = useAuth();
   const shellRole = user?.role === "TRAINING_MANAGER" ? "TRAINING_MANAGER" : user?.role === "ADMIN" ? "ADMIN" : "EVALUATOR";
 
+  const [searchQuery, setSearchQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState<string>("INCOMPLETE");
+  const [trainingTypeFilter, setTrainingTypeFilter] = useState<string>("ALL");
+  const [evaluationSetFilter, setEvaluationSetFilter] = useState<string>("ALL");
+  const [sortOrder, setSortOrder] = useState<string>("DUE_DATE_ASC");
+  const [isFilterExpanded, setIsFilterExpanded] = useState<boolean>(false);
+
+  const trainingTypes = useMemo(() => {
+    if (!query.data) return [];
+    const set = new Set<string>();
+    query.data.forEach(item => {
+      if (item.training.trainingType) set.add(item.training.trainingType);
+    });
+    return Array.from(set).sort((a, b) => a.localeCompare(b, "tr"));
+  }, [query.data]);
+
+  const evaluationSets = useMemo(() => {
+    if (!query.data) return [];
+    const set = new Set<string>();
+    query.data.forEach(item => {
+      if (item.evaluationSet?.name) set.add(item.evaluationSet.name);
+    });
+    return Array.from(set).sort((a, b) => a.localeCompare(b, "tr"));
+  }, [query.data]);
+
+  const filteredAssignments = useMemo(() => {
+    if (!query.data) return [];
+
+    return query.data
+      .filter(item => {
+        // Status Filter
+        if (statusFilter === "INCOMPLETE") {
+          if (item.status === "COMPLETED") return false;
+        } else if (statusFilter === "PENDING") {
+          if (item.status !== "PENDING" && item.status !== "REOPENED") return false;
+        } else if (statusFilter === "DRAFT") {
+          if (item.status !== "DRAFT") return false;
+        } else if (statusFilter === "COMPLETED") {
+          if (item.status !== "COMPLETED") return false;
+        } else if (statusFilter === "OVERDUE") {
+          if (item.status !== "OVERDUE") return false;
+        } else if (statusFilter === "NEAR_DUE") {
+          if (!item.nearDue) return false;
+        }
+
+        // Search Query
+        if (searchQuery.trim()) {
+          const q = searchQuery.toLowerCase().trim();
+          const titleMatch = item.training.title?.toLowerCase().includes(q);
+          const codeMatch = item.training.code?.toLowerCase().includes(q);
+          const setMatch = item.evaluationSet?.name?.toLowerCase().includes(q);
+          if (!titleMatch && !codeMatch && !setMatch) return false;
+        }
+
+        // Training Type Filter
+        if (trainingTypeFilter !== "ALL") {
+          if (item.training.trainingType !== trainingTypeFilter) return false;
+        }
+
+        // Evaluation Set Filter
+        if (evaluationSetFilter !== "ALL") {
+          if (item.evaluationSet?.name !== evaluationSetFilter) return false;
+        }
+
+        return true;
+      })
+      .sort((a, b) => {
+        const getDue = (dateVal: any) => (dateVal ? new Date(dateVal).getTime() : Infinity);
+        const getCreated = (dateVal: any) => (dateVal ? new Date(dateVal).getTime() : 0);
+
+        switch (sortOrder) {
+          case "DUE_DATE_ASC": {
+            const diff = getDue(a.dueDate) - getDue(b.dueDate);
+            if (diff !== 0) return diff;
+            return a.training.title.localeCompare(b.training.title, "tr");
+          }
+          case "DUE_DATE_DESC": {
+            const diff = getDue(b.dueDate) - getDue(a.dueDate);
+            if (diff !== 0) return diff;
+            return a.training.title.localeCompare(b.training.title, "tr");
+          }
+          case "TITLE_ASC":
+            return a.training.title.localeCompare(b.training.title, "tr");
+          case "TITLE_DESC":
+            return b.training.title.localeCompare(a.training.title, "tr");
+          case "CREATED_DESC":
+            return getCreated(b.createdAt) - getCreated(a.createdAt);
+          default:
+            return 0;
+        }
+      });
+  }, [query.data, statusFilter, searchQuery, trainingTypeFilter, evaluationSetFilter, sortOrder]);
+
+  const hasNonDefaultFilters =
+    statusFilter !== "INCOMPLETE" ||
+    sortOrder !== "DUE_DATE_ASC" ||
+    searchQuery.trim() !== "" ||
+    trainingTypeFilter !== "ALL" ||
+    evaluationSetFilter !== "ALL";
+
+  const customFilterCount = [
+    statusFilter !== "INCOMPLETE",
+    sortOrder !== "DUE_DATE_ASC",
+    searchQuery.trim() !== "",
+    trainingTypeFilter !== "ALL",
+    evaluationSetFilter !== "ALL",
+  ].filter(Boolean).length;
+
+  const resetFilters = () => {
+    setStatusFilter("INCOMPLETE");
+    setSortOrder("DUE_DATE_ASC");
+    setSearchQuery("");
+    setTrainingTypeFilter("ALL");
+    setEvaluationSetFilter("ALL");
+  };
+
   return (
     <AppShell role={shellRole}>
       <div>
@@ -60,11 +184,166 @@ function AssignmentList({ onOpen }: { onOpen: (id: number) => void }) {
         </p>
       </div>
 
-      <div className="mt-7 grid gap-4">
+      {/* Filter and Search Bar */}
+      <div className="mt-6 flex flex-col gap-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="relative flex-1 min-w-[240px]">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+            <Input
+              type="text"
+              placeholder="Eğitim adı, kod veya değerlendirme seti ara..."
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              className="pl-9 pr-8"
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery("")}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            )}
+          </div>
+
+          <div className="flex items-center gap-2">
+            <Button
+              type="button"
+              variant={isFilterExpanded ? "default" : "outline"}
+              onClick={() => setIsFilterExpanded(prev => !prev)}
+              className={`gap-2 ${
+                isFilterExpanded
+                  ? "bg-[#0b385d] text-white hover:bg-[#082d4c]"
+                  : "border-slate-200 text-slate-700 hover:bg-slate-100"
+              }`}
+            >
+              <SlidersHorizontal className="h-4 w-4" />
+              Detaylı Filtreler
+              {customFilterCount > 0 && (
+                <span className="ml-0.5 rounded-full bg-teal-600 px-2 py-0.5 text-xs text-white">
+                  {customFilterCount}
+                </span>
+              )}
+              {isFilterExpanded ? (
+                <ChevronUp className="h-4 w-4" />
+              ) : (
+                <ChevronDown className="h-4 w-4" />
+              )}
+            </Button>
+
+            {hasNonDefaultFilters && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={resetFilters}
+                className="gap-1.5 text-slate-600 hover:text-[#0b385d]"
+              >
+                <RotateCcw className="h-3.5 w-3.5" />
+                Filtreleri Sıfırla
+              </Button>
+            )}
+          </div>
+        </div>
+
+        {/* Collapsible Panel */}
+        {isFilterExpanded && (
+          <Card className="border-slate-200 bg-slate-50/80 p-4 shadow-sm">
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1.5">
+                  Durum
+                </label>
+                <select
+                  value={statusFilter}
+                  onChange={e => setStatusFilter(e.target.value)}
+                  className="h-9 w-full rounded-md border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100"
+                >
+                  <option value="INCOMPLETE">Tamamlanmamışlar (Varsayılan)</option>
+                  <option value="ALL">Tüm Durumlar</option>
+                  <option value="PENDING">Bekleyenler</option>
+                  <option value="DRAFT">Taslaklar</option>
+                  <option value="COMPLETED">Tamamlananlar</option>
+                  <option value="OVERDUE">Süresi Geçenler</option>
+                  <option value="NEAR_DUE">Son 3 Gün (Öncelikli)</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1.5">
+                  Sıralama
+                </label>
+                <select
+                  value={sortOrder}
+                  onChange={e => setSortOrder(e.target.value)}
+                  className="h-9 w-full rounded-md border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100"
+                >
+                  <option value="DUE_DATE_ASC">Son Teslim Tarihi (Öncelikli - En Yakın)</option>
+                  <option value="DUE_DATE_DESC">Son Teslim Tarihi (En Uzak)</option>
+                  <option value="TITLE_ASC">Eğitim Adı (A-Z)</option>
+                  <option value="TITLE_DESC">Eğitim Adı (Z-A)</option>
+                  <option value="CREATED_DESC">Atama Tarihi (Yeni - Eski)</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1.5">
+                  Eğitim Türü
+                </label>
+                <select
+                  value={trainingTypeFilter}
+                  onChange={e => setTrainingTypeFilter(e.target.value)}
+                  className="h-9 w-full rounded-md border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100"
+                >
+                  <option value="ALL">Tüm Türler</option>
+                  {trainingTypes.map(type => (
+                    <option key={type} value={type}>
+                      {type}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1.5">
+                  Değerlendirme Seti
+                </label>
+                <select
+                  value={evaluationSetFilter}
+                  onChange={e => setEvaluationSetFilter(e.target.value)}
+                  className="h-9 w-full rounded-md border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100"
+                >
+                  <option value="ALL">Tüm Setler</option>
+                  {evaluationSets.map(set => (
+                    <option key={set} value={set}>
+                      {set}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          </Card>
+        )}
+
+        {/* Count and default filter notice */}
+        <div className="flex flex-wrap items-center justify-between text-xs text-slate-500 px-1 pt-1 gap-2">
+          <span>
+            {query.data ? `${filteredAssignments.length} / ${query.data.length} atama listeleniyor` : ""}
+          </span>
+          {statusFilter === "INCOMPLETE" && (
+            <span className="font-medium text-teal-700">
+              * Varsayılan: Tamamlanmamış ve son teslim tarihine göre öncelikli sıralı.
+            </span>
+          )}
+        </div>
+      </div>
+
+      <div className="mt-4 grid gap-4">
         {query.isLoading ? (
           <div className="h-32 animate-pulse rounded-2xl bg-slate-200" />
-        ) : query.data?.length ? (
-          query.data.map(item => (
+        ) : filteredAssignments.length ? (
+          filteredAssignments.map(item => (
             <Card
               key={item.id}
               className={item.nearDue ? "border-rose-200 shadow-sm" : "border-slate-200 shadow-sm"}
@@ -128,10 +407,26 @@ function AssignmentList({ onOpen }: { onOpen: (id: number) => void }) {
         ) : (
           <Card className="border-slate-200 shadow-sm">
             <CardContent className="p-8 text-center">
-              <p className="text-lg font-semibold text-[#0b385d]">Henüz atama yok.</p>
-              <p className="mt-2 text-sm text-slate-500">
-                Size atanmış bir eğitim bulunmuyor.
+              <p className="text-lg font-semibold text-[#0b385d]">
+                {query.data?.length ? "Filtrelere uyan atama bulunamadı." : "Henüz atama yok."}
               </p>
+              <p className="mt-2 text-sm text-slate-500">
+                {query.data?.length
+                  ? "Arama veya filtre kriterlerinizi değiştirerek tekrar deneyin."
+                  : "Size atanmış bir eğitim bulunmuyor."}
+              </p>
+              {hasNonDefaultFilters && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={resetFilters}
+                  className="mt-4 gap-1.5"
+                >
+                  <RotateCcw className="h-3.5 w-3.5" />
+                  Filtreleri Sıfırla
+                </Button>
+              )}
             </CardContent>
           </Card>
         )}
@@ -153,6 +448,8 @@ function EvaluationForm({ assignmentId, onBack }: { assignmentId: number; onBack
 
   const assignmentSet =
     detail.data?.evaluationSet ?? null;
+  const maxScore = getRubricMaxScore(assignmentSet?.rubricScale ?? null);
+  const scoreOptions = Array.from({ length: maxScore }, (_, index) => index + 1);
   const visibleCriteria = assignmentSet?.criteria?.length
     ? assignmentSet.criteria.map(item => ({
         id: item.criterionId,
@@ -182,11 +479,14 @@ function EvaluationForm({ assignmentId, onBack }: { assignmentId: number; onBack
   }, [detail.data]);
 
   const save = trpc.evaluator.saveEvaluation.useMutation({
-    onSuccess: result => {
+    onSuccess: (result, variables) => {
       utils.evaluator.assignments.invalidate();
       utils.evaluator.dashboard.invalidate();
       utils.evaluator.assignmentDetail.invalidate({ assignmentId });
       toast.success(result?.summary ? "Değerlendirme tamamlandı." : "Taslak kaydedildi.");
+      if (variables.complete) {
+        onBack();
+      }
     },
     onError: error => toast.error(error.message),
   });
@@ -235,7 +535,7 @@ function EvaluationForm({ assignmentId, onBack }: { assignmentId: number; onBack
   const weightedTotal = visibleCriteria.reduce((sum, criterion) => {
     const score = scores[criterion.id] ?? 0;
     const weight = criterion.weight ?? 100 / Math.max(visibleCriteria.length, 1);
-    return sum + (weight * score) / 5;
+    return sum + (weight * score) / maxScore;
   }, 0);
   const total = weightedTotal;
   const passingScore = Number(assignmentSet?.passingScore ?? 70);
@@ -309,8 +609,11 @@ function EvaluationForm({ assignmentId, onBack }: { assignmentId: number; onBack
                     <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-teal-50 text-xs font-bold text-teal-700">
                       {index + 1}
                     </span>
-                    <div>
-                      <h2 className="font-semibold leading-6 text-[#0b385d]">{criterion.name}</h2>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <h2 className="font-semibold leading-6 text-[#0b385d]">{criterion.name}</h2>
+                        <span className="text-sm font-semibold text-red-600">{criterion.weight}%</span>
+                      </div>
                       {criterion.description && (
                         <p className="mt-1 text-sm text-slate-500">{criterion.description}</p>
                       )}
@@ -320,23 +623,39 @@ function EvaluationForm({ assignmentId, onBack }: { assignmentId: number; onBack
                   <div className="mt-4 space-y-3">
                     <div className="flex flex-wrap items-center gap-2">
                       <Label className="text-sm font-medium text-slate-700">Puan</Label>
-                      <div className="flex flex-wrap gap-2">
-                        {[1, 2, 3, 4, 5].map(score => (
-                          <button
-                            type="button"
-                            key={score}
-                            onClick={() =>
-                              setScores(prev => ({ ...prev, [criterion.id]: score }))
-                            }
-                            className={`h-9 min-w-9 rounded-lg border text-sm font-semibold transition-colors ${
-                              scores[criterion.id] === score
-                                ? "border-teal-600 bg-teal-600 text-white"
-                                : "border-slate-200 bg-white text-slate-700 hover:border-teal-200 hover:text-teal-700"
-                            }`}
-                          >
-                            {score}
-                          </button>
-                        ))}
+                      <div className="flex flex-wrap items-center gap-2">
+                        {scoreOptions.map(score => {
+                          const rubricLabel = getRubricLabel(assignmentSet?.rubricScale ?? null, score);
+                          const isSelected = scores[criterion.id] === score;
+
+                          return (
+                            <div key={score} className="flex items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setScores(prev => ({ ...prev, [criterion.id]: score }))
+                                }
+                                className={`h-9 min-w-9 rounded-lg border text-sm font-semibold transition-colors ${
+                                  isSelected
+                                    ? "border-teal-600 bg-teal-600 text-white"
+                                    : "border-slate-200 bg-white text-slate-700 hover:border-teal-200 hover:text-teal-700"
+                                }`}
+                                title={rubricLabel || `Puan ${score}`}
+                              >
+                                {score}
+                              </button>
+                              {rubricLabel && (
+                                <span
+                                  className={`text-xs ${
+                                    isSelected ? "font-semibold text-teal-700" : "text-slate-500"
+                                  }`}
+                                >
+                                  {rubricLabel}
+                                </span>
+                              )}
+                            </div>
+                          );
+                        })}
                       </div>
                     </div>
 

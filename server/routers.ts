@@ -46,6 +46,15 @@ import {
 } from "./_core/trpc";
 
 const scoreScale = [1, 2, 3, 4, 5] as const;
+function getRubricMaxScore(rubricScale?: Record<string, string> | null) {
+  if (!rubricScale) return 5;
+
+  const scores = Object.keys(rubricScale)
+    .map(key => Number(key))
+    .filter(value => Number.isInteger(value) && value > 0);
+
+  return scores.length > 0 ? Math.max(...scores) : 5;
+}
 const trainingStatus = z.enum(["DRAFT", "ACTIVE", "ARCHIVED"]);
 const assignmentStatus = z.enum([
   "PENDING",
@@ -87,15 +96,13 @@ async function audit(
 ) {
   const db = await getDb();
   if (!db) return;
-  await db
-    .insert(auditLogs)
-    .values({
-      userId,
-      action,
-      entityType,
-      entityId,
-      newValue: newValue ?? null,
-    });
+  await db.insert(auditLogs).values({
+    userId,
+    action,
+    entityType,
+    entityId,
+    newValue: newValue ?? null,
+  });
 }
 
 async function notify(
@@ -108,17 +115,15 @@ async function notify(
 ) {
   const db = await getDb();
   if (!db) return;
-  await db
-    .insert(notifications)
-    .values({
-      userId,
-      type,
-      title,
-      message,
-      link,
-      relatedEntityType: relatedEntityId ? "assignment" : null,
-      relatedEntityId,
-    });
+  await db.insert(notifications).values({
+    userId,
+    type,
+    title,
+    message,
+    link,
+    relatedEntityType: relatedEntityId ? "assignment" : null,
+    relatedEntityId,
+  });
   const recipient = (
     await db
       .select({ email: users.email })
@@ -148,10 +153,17 @@ async function getOwnedAssignment(
     });
   const record = (
     await db
-      .select({ assignment: assignments, training: trainings, evaluationSet: evaluationSets })
+      .select({
+        assignment: assignments,
+        training: trainings,
+        evaluationSet: evaluationSets,
+      })
       .from(assignments)
       .innerJoin(trainings, eq(assignments.trainingId, trainings.id))
-      .leftJoin(evaluationSets, eq(assignments.evaluationSetId, evaluationSets.id))
+      .leftJoin(
+        evaluationSets,
+        eq(assignments.evaluationSetId, evaluationSets.id)
+      )
       .where(eq(assignments.id, assignmentId))
       .limit(1)
   )[0];
@@ -186,10 +198,13 @@ const trainingInput = z.object({
     ),
   title: z.string().trim().min(2).max(300),
   description: z.string().max(10000).optional().nullable(),
-  trainingType: z.string().trim().max(120).refine(
-    value => ["Ürün", "Üretim", "Destek"].includes(value),
-    { message: "Eğitim Müdürlüğü alanı zorunludur." }
-  ),
+  trainingType: z
+    .string()
+    .trim()
+    .max(120)
+    .refine(value => ["Ürün", "Üretim", "Destek"].includes(value), {
+      message: "Eğitim Müdürlüğü alanı zorunludur.",
+    }),
   targetAudience: z.string().max(500).optional().nullable(),
   learningObjectives: z.string().max(10000).optional().nullable(),
   durationMinutes: z.number().int().min(1).max(100000).optional().nullable(),
@@ -358,7 +373,8 @@ export const appRouter = router({
           if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
 
           const allCriteria = await db.select().from(criteria);
-          const nextOrder = Math.max(...allCriteria.map(item => item.orderNumber), 0) + 1;
+          const nextOrder =
+            Math.max(...allCriteria.map(item => item.orderNumber), 0) + 1;
           const result = await db.insert(criteria).values({
             orderNumber: nextOrder,
             name: input.name,
@@ -434,9 +450,15 @@ export const appRouter = router({
             .set({ isActive: true, updatedAt: new Date() })
             .where(eq(criteria.id, input.id));
 
-          await audit(ctx.user.id, "CRITERION_RESTORED", "CRITERION", input.id, {
-            restored: true,
-          });
+          await audit(
+            ctx.user.id,
+            "CRITERION_RESTORED",
+            "CRITERION",
+            input.id,
+            {
+              restored: true,
+            }
+          );
           return { success: true };
         }),
     }),
@@ -444,7 +466,10 @@ export const appRouter = router({
       list: trainingManagerProcedure.query(async () => {
         const db = await getDb();
         if (!db) return [];
-        const sets = await db.select().from(evaluationSets).orderBy(desc(evaluationSets.createdAt));
+        const sets = await db
+          .select()
+          .from(evaluationSets)
+          .orderBy(desc(evaluationSets.createdAt));
         const assignments = await db
           .select({
             evaluationSetId: evaluationSetCriteria.evaluationSetId,
@@ -454,9 +479,23 @@ export const appRouter = router({
             description: criteria.description,
           })
           .from(evaluationSetCriteria)
-          .innerJoin(criteria, eq(evaluationSetCriteria.criterionId, criteria.id))
-          .orderBy(asc(evaluationSetCriteria.sortOrder), asc(evaluationSetCriteria.id));
-        const bySet = new Map<number, Array<{ criterionId: number; weight: number; name: string; description: string | null }>>();
+          .innerJoin(
+            criteria,
+            eq(evaluationSetCriteria.criterionId, criteria.id)
+          )
+          .orderBy(
+            asc(evaluationSetCriteria.sortOrder),
+            asc(evaluationSetCriteria.id)
+          );
+        const bySet = new Map<
+          number,
+          Array<{
+            criterionId: number;
+            weight: number;
+            name: string;
+            description: string | null;
+          }>
+        >();
         for (const item of assignments) {
           const list = bySet.get(item.evaluationSetId) ?? [];
           list.push({
@@ -481,21 +520,29 @@ export const appRouter = router({
             description: z.string().trim().max(1000).optional().nullable(),
             rubricScale: z.record(z.string(), z.string()).default({}),
             passingScore: z.number().min(0).max(100).default(70),
-            criteria: z.array(
-              z.object({
-                criterionId: z.number().int().positive(),
-                weight: z.number().min(0).max(100),
-              })
-            ).min(1),
+            criteria: z
+              .array(
+                z.object({
+                  criterionId: z.number().int().positive(),
+                  weight: z.number().min(0).max(100),
+                })
+              )
+              .min(1),
           })
         )
         .mutation(async ({ ctx, input }) => {
           assertNoForcedPasswordChange(ctx.user);
           const db = await getDb();
           if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
-          const totalWeight = input.criteria.reduce((sum, item) => sum + item.weight, 0);
+          const totalWeight = input.criteria.reduce(
+            (sum, item) => sum + item.weight,
+            0
+          );
           if (Math.abs(totalWeight - 100) > 0.0001) {
-            throw new TRPCError({ code: "BAD_REQUEST", message: "Toplam ağırlık 100 olmalıdır." });
+            throw new TRPCError({
+              code: "BAD_REQUEST",
+              message: "Toplam ağırlık 100 olmalıdır.",
+            });
           }
           const result = await db.insert(evaluationSets).values({
             name: input.name,
@@ -513,9 +560,15 @@ export const appRouter = router({
               sortOrder: index,
             }))
           );
-          await audit(ctx.user.id, "EVALUATION_SET_CREATED", "EVALUATION_SET", setId, {
-            name: input.name,
-          });
+          await audit(
+            ctx.user.id,
+            "EVALUATION_SET_CREATED",
+            "EVALUATION_SET",
+            setId,
+            {
+              name: input.name,
+            }
+          );
           return { id: setId };
         }),
       update: adminProcedure
@@ -526,42 +579,67 @@ export const appRouter = router({
             description: z.string().trim().max(1000).optional().nullable(),
             rubricScale: z.record(z.string(), z.string()).default({}),
             passingScore: z.number().min(0).max(100).default(70),
-            criteria: z.array(
-              z.object({
-                criterionId: z.number().int().positive(),
-                weight: z.number().min(0).max(100),
-              })
-            ).min(1),
+            criteria: z
+              .array(
+                z.object({
+                  criterionId: z.number().int().positive(),
+                  weight: z.number().min(0).max(100),
+                })
+              )
+              .min(1),
           })
         )
         .mutation(async ({ ctx, input }) => {
           assertNoForcedPasswordChange(ctx.user);
           const db = await getDb();
           if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
-          const totalWeight = input.criteria.reduce((sum, item) => sum + item.weight, 0);
+          const totalWeight = input.criteria.reduce(
+            (sum, item) => sum + item.weight,
+            0
+          );
           if (Math.abs(totalWeight - 100) > 0.0001) {
-            throw new TRPCError({ code: "BAD_REQUEST", message: "Toplam ağırlık 100 olmalıdır." });
+            throw new TRPCError({
+              code: "BAD_REQUEST",
+              message: "Toplam ağırlık 100 olmalıdır.",
+            });
           }
-          await db.update(evaluationSets).set({
-            name: input.name,
-            description: input.description?.trim() || null,
-            rubricScale: input.rubricScale,
-            passingScore: input.passingScore,
-            updatedAt: new Date(),
-          }).where(eq(evaluationSets.id, input.id));
+          await db
+            .update(evaluationSets)
+            .set({
+              name: input.name,
+              description: input.description?.trim() || null,
+              rubricScale: input.rubricScale,
+              passingScore: input.passingScore,
+              updatedAt: new Date(),
+            })
+            .where(eq(evaluationSets.id, input.id));
           const setEvaluations = await db
-            .select({ id: evaluations.id, successPercentage: evaluations.successPercentage })
+            .select({
+              id: evaluations.id,
+              successPercentage: evaluations.successPercentage,
+            })
             .from(evaluations)
-            .innerJoin(assignments, eq(evaluations.assignmentId, assignments.id))
+            .innerJoin(
+              assignments,
+              eq(evaluations.assignmentId, assignments.id)
+            )
             .where(eq(assignments.evaluationSetId, input.id));
           for (const evaluation of setEvaluations) {
             if (evaluation.successPercentage === null) continue;
-            await db.update(evaluations).set({
-              successStatus: evaluation.successPercentage >= input.passingScore ? "SUCCESSFUL" : "UNSUCCESSFUL",
-              updatedAt: new Date(),
-            }).where(eq(evaluations.id, evaluation.id));
+            await db
+              .update(evaluations)
+              .set({
+                successStatus:
+                  evaluation.successPercentage >= input.passingScore
+                    ? "SUCCESSFUL"
+                    : "UNSUCCESSFUL",
+                updatedAt: new Date(),
+              })
+              .where(eq(evaluations.id, evaluation.id));
           }
-          await db.delete(evaluationSetCriteria).where(eq(evaluationSetCriteria.evaluationSetId, input.id));
+          await db
+            .delete(evaluationSetCriteria)
+            .where(eq(evaluationSetCriteria.evaluationSetId, input.id));
           await db.insert(evaluationSetCriteria).values(
             input.criteria.map((criterion, index) => ({
               evaluationSetId: input.id,
@@ -570,9 +648,15 @@ export const appRouter = router({
               sortOrder: index,
             }))
           );
-          await audit(ctx.user.id, "EVALUATION_SET_UPDATED", "EVALUATION_SET", input.id, {
-            name: input.name,
-          });
+          await audit(
+            ctx.user.id,
+            "EVALUATION_SET_UPDATED",
+            "EVALUATION_SET",
+            input.id,
+            {
+              name: input.name,
+            }
+          );
           return { success: true };
         }),
       remove: adminProcedure
@@ -581,10 +665,40 @@ export const appRouter = router({
           assertNoForcedPasswordChange(ctx.user);
           const db = await getDb();
           if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
-          await db.update(evaluationSets).set({ isActive: false, updatedAt: new Date() }).where(eq(evaluationSets.id, input.id));
-          await audit(ctx.user.id, "EVALUATION_SET_REMOVED", "EVALUATION_SET", input.id, {
-            removed: true,
-          });
+          await db
+            .update(evaluationSets)
+            .set({ isActive: false, updatedAt: new Date() })
+            .where(eq(evaluationSets.id, input.id));
+          await audit(
+            ctx.user.id,
+            "EVALUATION_SET_REMOVED",
+            "EVALUATION_SET",
+            input.id,
+            {
+              removed: true,
+            }
+          );
+          return { success: true };
+        }),
+      restore: adminProcedure
+        .input(z.object({ id: z.number().int().positive() }))
+        .mutation(async ({ ctx, input }) => {
+          assertNoForcedPasswordChange(ctx.user);
+          const db = await getDb();
+          if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+          await db
+            .update(evaluationSets)
+            .set({ isActive: true, updatedAt: new Date() })
+            .where(eq(evaluationSets.id, input.id));
+          await audit(
+            ctx.user.id,
+            "EVALUATION_SET_RESTORED",
+            "EVALUATION_SET",
+            input.id,
+            {
+              restored: true,
+            }
+          );
           return { success: true };
         }),
     }),
@@ -603,14 +717,20 @@ export const appRouter = router({
       .query(async ({ input }) => {
         const db = await getDb();
         if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
-        const [allTrainings, allAssignments, allCompleted, allUsers] = await Promise.all([
-          db.select().from(trainings),
-          db.select().from(assignments),
-          db.select().from(evaluations).where(eq(evaluations.status, "COMPLETED")),
-          db.select().from(users),
-        ]);
+        const [allTrainings, allAssignments, allCompleted, allUsers] =
+          await Promise.all([
+            db.select().from(trainings),
+            db.select().from(assignments),
+            db
+              .select()
+              .from(evaluations)
+              .where(eq(evaluations.status, "COMPLETED")),
+            db.select().from(users),
+          ]);
         const filteredTrainings = input?.trainingType
-          ? allTrainings.filter(training => training.trainingType === input.trainingType)
+          ? allTrainings.filter(
+              training => training.trainingType === input.trainingType
+            )
           : allTrainings;
         const days =
           input?.period === "30_DAYS"
@@ -625,18 +745,28 @@ export const appRouter = router({
         const activeAssignments = allAssignments.filter(
           assignment =>
             activeTrainingIds.has(assignment.trainingId) &&
-            (!input?.evaluationSetId || assignment.evaluationSetId === input.evaluationSetId)
+            (!input?.evaluationSetId ||
+              assignment.evaluationSetId === input.evaluationSetId)
         );
         const filteredCompleted = filterDashboardRecordsForActiveTrainings(
           cutoff
-            ? allCompleted.filter(item => item.submittedAt && item.submittedAt >= cutoff)
+            ? allCompleted.filter(
+                item => item.submittedAt && item.submittedAt >= cutoff
+              )
             : allCompleted,
           activeTrainingIds
         ).filter(item => {
-          const assignment = allAssignments.find(row => row.id === item.assignmentId);
-          return !input?.evaluationSetId || assignment?.evaluationSetId === input.evaluationSetId;
+          const assignment = allAssignments.find(
+            row => row.id === item.assignmentId
+          );
+          return (
+            !input?.evaluationSetId ||
+            assignment?.evaluationSetId === input.evaluationSetId
+          );
         });
-        const completedAssignmentIds = new Set(filteredCompleted.map(item => item.assignmentId));
+        const completedAssignmentIds = new Set(
+          filteredCompleted.map(item => item.assignmentId)
+        );
         const selectedSetCriteria = input?.evaluationSetId
           ? await db
               .select({
@@ -646,9 +776,23 @@ export const appRouter = router({
                 description: criteria.description,
               })
               .from(evaluationSetCriteria)
-              .innerJoin(criteria, eq(evaluationSetCriteria.criterionId, criteria.id))
-              .where(and(eq(evaluationSetCriteria.evaluationSetId, input.evaluationSetId), eq(criteria.isActive, true)))
-              .orderBy(asc(evaluationSetCriteria.sortOrder), asc(evaluationSetCriteria.id))
+              .innerJoin(
+                criteria,
+                eq(evaluationSetCriteria.criterionId, criteria.id)
+              )
+              .where(
+                and(
+                  eq(
+                    evaluationSetCriteria.evaluationSetId,
+                    input.evaluationSetId
+                  ),
+                  eq(criteria.isActive, true)
+                )
+              )
+              .orderBy(
+                asc(evaluationSetCriteria.sortOrder),
+                asc(evaluationSetCriteria.id)
+              )
           : await db
               .select()
               .from(criteria)
@@ -657,48 +801,78 @@ export const appRouter = router({
         const criterionScores = await Promise.all(
           filteredCompleted.map(async evaluation => {
             const responses = await db
-              .select({ criterionId: evaluationResponses.criterionId, score: evaluationResponses.score })
+              .select({
+                criterionId: evaluationResponses.criterionId,
+                score: evaluationResponses.score,
+              })
               .from(evaluationResponses)
               .where(eq(evaluationResponses.evaluationId, evaluation.id));
-            const byCriterion = new Map(responses.map(response => [response.criterionId, response.score]));
-            return selectedSetCriteria.map(criterion => byCriterion.get(criterion.id) ?? 0);
+            const byCriterion = new Map(
+              responses.map(response => [response.criterionId, response.score])
+            );
+            return selectedSetCriteria.map(
+              criterion => byCriterion.get(criterion.id) ?? 0
+            );
           })
         );
         const criterionAverages = selectedSetCriteria.length
           ? Array.from({ length: selectedSetCriteria.length }, (_, index) => {
-              const count = criterionScores.filter(scores => scores[index] !== undefined).length;
+              const count = criterionScores.filter(
+                scores => scores[index] !== undefined
+              ).length;
               if (!count) return 0;
-              return criterionScores.reduce((sum, scores) => sum + (scores[index] ?? 0), 0) / count;
+              return (
+                criterionScores.reduce(
+                  (sum, scores) => sum + (scores[index] ?? 0),
+                  0
+                ) / count
+              );
             })
           : [];
         const successfulTrainings = new Set(
-          filteredCompleted.filter(item => item.successStatus === "SUCCESSFUL").map(item => item.trainingId)
+          filteredCompleted
+            .filter(item => item.successStatus === "SUCCESSFUL")
+            .map(item => item.trainingId)
         );
         const unsuccessfulTrainings = new Set(
-          filteredCompleted.filter(item => item.successStatus === "UNSUCCESSFUL").map(item => item.trainingId)
+          filteredCompleted
+            .filter(item => item.successStatus === "UNSUCCESSFUL")
+            .map(item => item.trainingId)
         );
         const evaluatorUsers = allUsers.filter(user =>
           activeAssignments.some(item => item.evaluatorId === user.id)
         );
         const evaluatorCompletion = evaluatorUsers
           .map(user => {
-            const assigned = activeAssignments.filter(item => item.evaluatorId === user.id);
-            const completedCount = assigned.filter(item => completedAssignmentIds.has(item.id)).length;
+            const assigned = activeAssignments.filter(
+              item => item.evaluatorId === user.id
+            );
+            const completedCount = assigned.filter(item =>
+              completedAssignmentIds.has(item.id)
+            ).length;
             return {
               name: `${user.firstName} ${user.lastName}`,
               assignedCount: assigned.length,
               completedCount,
-              completionRate: assigned.length ? (completedCount / assigned.length) * 100 : 0,
+              completionRate: assigned.length
+                ? (completedCount / assigned.length) * 100
+                : 0,
             };
           })
           .sort((a, b) => a.name.localeCompare(b.name, "tr"));
-        const activeTrainings = filteredTrainings.filter(training => activeTrainingIds.has(training.id));
+        const activeTrainings = filteredTrainings.filter(training =>
+          activeTrainingIds.has(training.id)
+        );
         return {
           cards: {
             totalTrainings: activeTrainings.length,
-            activeAssignments: activeAssignments.filter(item => !completedAssignmentIds.has(item.id)).length,
+            activeAssignments: activeAssignments.filter(
+              item => !completedAssignmentIds.has(item.id)
+            ).length,
             completedEvaluations: filteredCompleted.length,
-            pendingEvaluations: activeAssignments.filter(item => !completedAssignmentIds.has(item.id)).length,
+            pendingEvaluations: activeAssignments.filter(
+              item => !completedAssignmentIds.has(item.id)
+            ).length,
             successfulTrainings: successfulTrainings.size,
             unsuccessfulTrainings: unsuccessfulTrainings.size,
             completionRate: activeAssignments.length
@@ -710,7 +884,10 @@ export const appRouter = router({
               { name: "Başarılı", value: successfulTrainings.size },
               { name: "Başarısız", value: unsuccessfulTrainings.size },
             ],
-            criteria: createCriteriaChartData(selectedSetCriteria, criterionAverages),
+            criteria: createCriteriaChartData(
+              selectedSetCriteria,
+              criterionAverages
+            ),
             evaluators: evaluatorCompletion,
           },
         };
@@ -762,20 +939,18 @@ export const appRouter = router({
               message: "Bu e-posta adresi zaten kullanılıyor.",
             });
           const passwordHash = await bcrypt.hash(input.password, 12);
-          const result = await db
-            .insert(users)
-            .values({
-              openId: `local:${nanoid(21)}`,
-              firstName: input.firstName,
-              lastName: input.lastName,
-              name: `${input.firstName} ${input.lastName}`,
-              email: input.email.toLowerCase(),
-              passwordHash,
-              role: input.role,
-              isActive: true,
-              mustChangePassword: true,
-              loginMethod: "password",
-            });
+          const result = await db.insert(users).values({
+            openId: `local:${nanoid(21)}`,
+            firstName: input.firstName,
+            lastName: input.lastName,
+            name: `${input.firstName} ${input.lastName}`,
+            email: input.email.toLowerCase(),
+            passwordHash,
+            role: input.role,
+            isActive: true,
+            mustChangePassword: true,
+            loginMethod: "password",
+          });
           const id = Number(result.lastInsertRowid ?? 0);
           await audit(ctx.user.id, "USER_CREATED", "USER", id, {
             email: input.email,
@@ -789,6 +964,7 @@ export const appRouter = router({
             id: z.number().int().positive(),
             firstName: z.string().trim().min(2).max(100),
             lastName: z.string().trim().min(2).max(100),
+            email: z.string().email(),
             role: z.enum(["ADMIN", "TRAINING_MANAGER", "EVALUATOR"]),
             isActive: z.boolean(),
           })
@@ -801,17 +977,32 @@ export const appRouter = router({
               code: "BAD_REQUEST",
               message: "Kendi hesabınızı pasifleştiremezsiniz.",
             });
+          const normalizedEmail = input.email.toLowerCase();
+          const existing = (
+            await db
+              .select({ id: users.id })
+              .from(users)
+              .where(eq(users.email, normalizedEmail))
+              .limit(1)
+          )[0];
+          if (existing && existing.id !== input.id)
+            throw new TRPCError({
+              code: "CONFLICT",
+              message: "Bu e-posta adresi zaten kullanılıyor.",
+            });
           await db
             .update(users)
             .set({
               firstName: input.firstName,
               lastName: input.lastName,
               name: `${input.firstName} ${input.lastName}`,
+              email: normalizedEmail,
               role: input.role,
               isActive: input.isActive,
             })
             .where(eq(users.id, input.id));
           await audit(ctx.user.id, "USER_UPDATED", "USER", input.id, {
+            email: normalizedEmail,
             role: input.role,
             isActive: input.isActive,
           });
@@ -845,18 +1036,170 @@ export const appRouter = router({
           await audit(ctx.user.id, "PASSWORD_RESET", "USER", input.id);
           return { success: true };
         }),
-    }),
-      reports: router({
-        list: trainingManagerProcedure.query(async () => {
+      userAssignments: trainingManagerProcedure
+        .input(z.object({ userId: z.number().int().positive() }))
+        .query(async ({ input }) => {
           const db = await getDb();
           if (!db) return [];
           const rows = await db
-            .select({ assignment: assignments, training: trainings, evaluationSet: evaluationSets, evaluation: evaluations })
+            .select({
+              assignment: assignments,
+              training: trainings,
+              evaluationSet: evaluationSets,
+              evaluation: evaluations,
+            })
             .from(assignments)
             .innerJoin(trainings, eq(assignments.trainingId, trainings.id))
-            .leftJoin(evaluationSets, eq(assignments.evaluationSetId, evaluationSets.id))
-            .leftJoin(evaluations, eq(evaluations.assignmentId, assignments.id));
-          const grouped = new Map<string, {
+            .leftJoin(
+              evaluationSets,
+              eq(assignments.evaluationSetId, evaluationSets.id)
+            )
+            .leftJoin(evaluations, eq(evaluations.assignmentId, assignments.id))
+            .where(eq(assignments.evaluatorId, input.userId))
+            .orderBy(desc(assignments.createdAt));
+
+          const now = new Date();
+          return rows.map(row => ({
+            id: row.assignment.id,
+            trainingId: row.assignment.trainingId,
+            trainingTitle: row.training.title,
+            trainingCode: row.training.code,
+            trainingType: row.training.trainingType ?? "Eğitim",
+            evaluationSetName: row.evaluationSet?.name ?? "Varsayılan set",
+            dueDate: row.assignment.dueDate,
+            status:
+              row.assignment.status !== "COMPLETED" &&
+              row.assignment.dueDate < now
+                ? "OVERDUE"
+                : row.assignment.status,
+            completedAt: row.assignment.completedAt,
+            createdAt: row.assignment.createdAt,
+            evaluation: row.evaluation
+              ? {
+                  id: row.evaluation.id,
+                  status: row.evaluation.status,
+                  successPercentage: row.evaluation.successPercentage,
+                  successStatus: row.evaluation.successStatus,
+                }
+              : null,
+          }));
+        }),
+      convertToDraft: adminProcedure
+        .input(z.object({ assignmentId: z.number().int().positive() }))
+        .mutation(async ({ ctx, input }) => {
+          const db = await getDb();
+          if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+          const assignmentRows = await db
+            .select()
+            .from(assignments)
+            .where(eq(assignments.id, input.assignmentId))
+            .limit(1);
+          const record = assignmentRows[0];
+          if (!record)
+            throw new TRPCError({
+              code: "NOT_FOUND",
+              message: "Atama bulunamadı.",
+            });
+
+          await db
+            .update(assignments)
+            .set({
+              status: "DRAFT",
+              completedAt: null,
+              reopenedAt: new Date(),
+              reopenedById: ctx.user.id,
+            })
+            .where(eq(assignments.id, input.assignmentId));
+
+          await db
+            .update(evaluations)
+            .set({
+              status: "DRAFT",
+              submittedAt: null,
+            })
+            .where(eq(evaluations.assignmentId, input.assignmentId));
+
+          await audit(
+            ctx.user.id,
+            "EVALUATION_CONVERTED_TO_DRAFT",
+            "ASSIGNMENT",
+            input.assignmentId,
+            {
+              evaluatorId: record.evaluatorId,
+              trainingId: record.trainingId,
+            }
+          );
+
+          return { success: true };
+        }),
+      deleteAssignment: adminProcedure
+        .input(z.object({ assignmentId: z.number().int().positive() }))
+        .mutation(async ({ ctx, input }) => {
+          const db = await getDb();
+          if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+          const assignmentRows = await db
+            .select()
+            .from(assignments)
+            .where(eq(assignments.id, input.assignmentId))
+            .limit(1);
+          const record = assignmentRows[0];
+          if (!record)
+            throw new TRPCError({
+              code: "NOT_FOUND",
+              message: "Atama bulunamadı.",
+            });
+
+          const evaluationRows = await db
+            .select({ id: evaluations.id })
+            .from(evaluations)
+            .where(eq(evaluations.assignmentId, input.assignmentId));
+
+          for (const ev of evaluationRows) {
+            await db
+              .delete(evaluationResponses)
+              .where(eq(evaluationResponses.evaluationId, ev.id));
+            await db.delete(evaluations).where(eq(evaluations.id, ev.id));
+          }
+
+          await db
+            .delete(assignments)
+            .where(eq(assignments.id, input.assignmentId));
+
+          await audit(
+            ctx.user.id,
+            "ASSIGNMENT_DELETED",
+            "ASSIGNMENT",
+            input.assignmentId,
+            {
+              evaluatorId: record.evaluatorId,
+              trainingId: record.trainingId,
+            }
+          );
+
+          return { success: true };
+        }),
+    }),
+    reports: router({
+      list: trainingManagerProcedure.query(async () => {
+        const db = await getDb();
+        if (!db) return [];
+        const rows = await db
+          .select({
+            assignment: assignments,
+            training: trainings,
+            evaluationSet: evaluationSets,
+            evaluation: evaluations,
+          })
+          .from(assignments)
+          .innerJoin(trainings, eq(assignments.trainingId, trainings.id))
+          .leftJoin(
+            evaluationSets,
+            eq(assignments.evaluationSetId, evaluationSets.id)
+          )
+          .leftJoin(evaluations, eq(evaluations.assignmentId, assignments.id));
+        const grouped = new Map<
+          string,
+          {
             id: string;
             trainingId: number;
             title: string;
@@ -869,41 +1212,53 @@ export const appRouter = router({
             assignedCount: number;
             completedCount: number;
             totalScore: number;
-          }>();
-          for (const row of rows) {
-            const evaluationSetId = row.assignment.evaluationSetId ?? null;
-            const key = `${row.training.id}-${evaluationSetId ?? "none"}`;
-            const current = grouped.get(key) ?? {
-              id: key,
-              trainingId: row.training.id,
-              title: row.training.title,
-              code: row.training.code,
-              version: row.training.version,
-              contentOwner: row.training.contentOwner ?? "Belirtilmemiş",
-              trainingType: row.training.trainingType ?? "Belirtilmemiş",
-              evaluationSetId,
-              evaluationSetName: row.evaluationSet?.name ?? "Değerlendirme seti belirtilmemiş",
-              assignedCount: 0,
-              completedCount: 0,
-              totalScore: 0,
-            };
-            current.assignedCount += 1;
-            if (row.evaluation?.status === "COMPLETED" && row.evaluation.totalScore !== null) {
-              current.completedCount += 1;
-              current.totalScore += row.evaluation.totalScore;
-            }
-            grouped.set(key, current);
           }
-          return Array.from(grouped.values()).map(row => {
-            const averageTotal = row.completedCount ? row.totalScore / row.completedCount : null;
-            return {
-              ...row,
-              averageTotal,
-              successStatus: averageTotal === null ? null : averageTotal >= 70 ? "SUCCESSFUL" as const : "UNSUCCESSFUL" as const,
-            };
-          });
-        }),
+        >();
+        for (const row of rows) {
+          const evaluationSetId = row.assignment.evaluationSetId ?? null;
+          const key = `${row.training.id}-${evaluationSetId ?? "none"}`;
+          const current = grouped.get(key) ?? {
+            id: key,
+            trainingId: row.training.id,
+            title: row.training.title,
+            code: row.training.code,
+            version: row.training.version,
+            contentOwner: row.training.contentOwner ?? "Belirtilmemiş",
+            trainingType: row.training.trainingType ?? "Belirtilmemiş",
+            evaluationSetId,
+            evaluationSetName:
+              row.evaluationSet?.name ?? "Değerlendirme seti belirtilmemiş",
+            assignedCount: 0,
+            completedCount: 0,
+            totalScore: 0,
+          };
+          current.assignedCount += 1;
+          if (
+            row.evaluation?.status === "COMPLETED" &&
+            row.evaluation.totalScore !== null
+          ) {
+            current.completedCount += 1;
+            current.totalScore += row.evaluation.totalScore;
+          }
+          grouped.set(key, current);
+        }
+        return Array.from(grouped.values()).map(row => {
+          const averageTotal = row.completedCount
+            ? row.totalScore / row.completedCount
+            : null;
+          return {
+            ...row,
+            averageTotal,
+            successStatus:
+              averageTotal === null
+                ? null
+                : averageTotal >= 70
+                  ? ("SUCCESSFUL" as const)
+                  : ("UNSUCCESSFUL" as const),
+          };
+        });
       }),
+    }),
     trainings: router({
       list: trainingManagerProcedure
         .input(z.object({ status: trainingStatus.optional() }).optional())
@@ -929,7 +1284,9 @@ export const appRouter = router({
             const matches = allAssignments.filter(
               assignment => assignment.trainingId === training.id
             );
-            const assignedEvaluatorIdsBySet = matches.reduce<Record<string, number[]>>((acc, assignment) => {
+            const assignedEvaluatorIdsBySet = matches.reduce<
+              Record<string, number[]>
+            >((acc, assignment) => {
               if (!assignment.evaluationSetId) return acc;
               const key = String(assignment.evaluationSetId);
               acc[key] = [...(acc[key] ?? []), assignment.evaluatorId];
@@ -940,29 +1297,40 @@ export const appRouter = router({
                 const setAssignments = matches.filter(
                   assignment => String(assignment.evaluationSetId) === setId
                 );
-                const setAssignmentIds = new Set(setAssignments.map(assignment => assignment.id));
-                const setCompleted = complete.filter(
-                  item => setAssignmentIds.has(item.assignmentId)
+                const setAssignmentIds = new Set(
+                  setAssignments.map(assignment => assignment.id)
+                );
+                const setCompleted = complete.filter(item =>
+                  setAssignmentIds.has(item.assignmentId)
                 );
                 const averageTotal = setCompleted.length
-                  ? setCompleted.reduce((sum, item) => sum + (item.totalScore ?? 0), 0) / setCompleted.length
+                  ? setCompleted.reduce(
+                      (sum, item) => sum + (item.totalScore ?? 0),
+                      0
+                    ) / setCompleted.length
                   : null;
-                return [setId, {
-                  assignedCount: setAssignments.length,
-                  completedCount: setCompleted.length,
-                  pendingCount: setAssignments.length - setCompleted.length,
-                  averageTotal,
-                  successStatus:
-                    averageTotal === null
-                      ? null
-                      : averageTotal >= 70
-                        ? "SUCCESSFUL"
-                        : "UNSUCCESSFUL",
-                  dueDate: setAssignments.reduce<Date | null>(
-                    (latest, assignment) => !latest || assignment.dueDate > latest ? assignment.dueDate : latest,
-                    null
-                  ),
-                }];
+                return [
+                  setId,
+                  {
+                    assignedCount: setAssignments.length,
+                    completedCount: setCompleted.length,
+                    pendingCount: setAssignments.length - setCompleted.length,
+                    averageTotal,
+                    successStatus:
+                      averageTotal === null
+                        ? null
+                        : averageTotal >= 70
+                          ? "SUCCESSFUL"
+                          : "UNSUCCESSFUL",
+                    dueDate: setAssignments.reduce<Date | null>(
+                      (latest, assignment) =>
+                        !latest || assignment.dueDate > latest
+                          ? assignment.dueDate
+                          : latest,
+                      null
+                    ),
+                  },
+                ];
               })
             );
             const completed = complete.filter(
@@ -986,8 +1354,7 @@ export const appRouter = router({
               completedCount: completed.length,
               pendingCount: matches.length - completed.length,
               averageTotal,
-              successPercentage:
-                averageTotal === null ? null : averageTotal,
+              successPercentage: averageTotal === null ? null : averageTotal,
               successStatus:
                 averageTotal === null
                   ? null
@@ -1044,16 +1411,14 @@ export const appRouter = router({
             const dueDate =
               input.evaluationEndDate ?? new Date(Date.now() + 7 * 86400000);
             for (const evaluator of validEvaluators) {
-              await db
-                .insert(assignments)
-                .values({
-                  trainingId,
-                  evaluatorId: evaluator.id,
-                  assignedById: ctx.user.id,
-                  assignedAt: new Date(),
-                  dueDate,
-                  status: "PENDING",
-                });
+              await db.insert(assignments).values({
+                trainingId,
+                evaluatorId: evaluator.id,
+                assignedById: ctx.user.id,
+                assignedAt: new Date(),
+                dueDate,
+                status: "PENDING",
+              });
               await notify(
                 evaluator.id,
                 "ASSIGNMENT",
@@ -1098,14 +1463,17 @@ export const appRouter = router({
               code: "NOT_FOUND",
               message: "Eğitim bulunamadı.",
             });
-          const nextStatus = training.status === "ARCHIVED" ? "ACTIVE" : "ARCHIVED";
+          const nextStatus =
+            training.status === "ARCHIVED" ? "ACTIVE" : "ARCHIVED";
           await db
             .update(trainings)
             .set({ status: nextStatus })
             .where(eq(trainings.id, input.id));
           await audit(
             ctx.user.id,
-            nextStatus === "ARCHIVED" ? "TRAINING_ARCHIVED" : "TRAINING_REACTIVATED",
+            nextStatus === "ARCHIVED"
+              ? "TRAINING_ARCHIVED"
+              : "TRAINING_REACTIVATED",
             "TRAINING",
             input.id
           );
@@ -1125,10 +1493,17 @@ export const appRouter = router({
           )[0];
           if (!training) throw new TRPCError({ code: "NOT_FOUND" });
           const records = await db
-            .select({ assignment: assignments, evaluator: users, evaluationSet: evaluationSets })
+            .select({
+              assignment: assignments,
+              evaluator: users,
+              evaluationSet: evaluationSets,
+            })
             .from(assignments)
             .innerJoin(users, eq(assignments.evaluatorId, users.id))
-            .leftJoin(evaluationSets, eq(assignments.evaluationSetId, evaluationSets.id))
+            .leftJoin(
+              evaluationSets,
+              eq(assignments.evaluationSetId, evaluationSets.id)
+            )
             .where(eq(assignments.trainingId, input.id));
           const resultEvaluations = await db
             .select()
@@ -1177,13 +1552,19 @@ export const appRouter = router({
               await db
                 .select({ id: evaluationSets.id })
                 .from(evaluationSets)
-                .where(and(eq(evaluationSets.id, input.evaluationSetId), eq(evaluationSets.isActive, true)))
+                .where(
+                  and(
+                    eq(evaluationSets.id, input.evaluationSetId),
+                    eq(evaluationSets.isActive, true)
+                  )
+                )
                 .limit(1)
             )[0];
             if (!set) {
               throw new TRPCError({
                 code: "BAD_REQUEST",
-                message: "Seçilen değerlendirme seti aktif değil veya bulunamadı.",
+                message:
+                  "Seçilen değerlendirme seti aktif değil veya bulunamadı.",
               });
             }
           }
@@ -1253,17 +1634,15 @@ export const appRouter = router({
                 .where(eq(assignments.id, existing.id));
               continue;
             }
-            await db
-              .insert(assignments)
-              .values({
-                trainingId: input.trainingId,
-                evaluatorId: evaluator.id,
-                evaluationSetId: input.evaluationSetId ?? null,
-                assignedById: ctx.user.id,
-                assignedAt: new Date(),
-                dueDate: input.dueDate,
-                status: "PENDING",
-              });
+            await db.insert(assignments).values({
+              trainingId: input.trainingId,
+              evaluatorId: evaluator.id,
+              evaluationSetId: input.evaluationSetId ?? null,
+              assignedById: ctx.user.id,
+              assignedAt: new Date(),
+              dueDate: input.dueDate,
+              status: "PENDING",
+            });
             await notify(
               evaluator.id,
               "ASSIGNMENT",
@@ -1278,7 +1657,10 @@ export const appRouter = router({
             "EVALUATORS_ASSIGNED",
             "TRAINING",
             input.trainingId,
-            { evaluatorIds: uniqueEvaluatorIds, evaluationSetId: input.evaluationSetId ?? null }
+            {
+              evaluatorIds: uniqueEvaluatorIds,
+              evaluationSetId: input.evaluationSetId ?? null,
+            }
           );
           return { success: true };
         }),
@@ -1331,7 +1713,11 @@ export const appRouter = router({
 
   evaluator: router({
     dashboard: protectedProcedure.query(async ({ ctx }) => {
-      if (!(["ADMIN", "TRAINING_MANAGER", "EVALUATOR"] as const).includes(ctx.user.role))
+      if (
+        !(["ADMIN", "TRAINING_MANAGER", "EVALUATOR"] as const).includes(
+          ctx.user.role
+        )
+      )
         throw new TRPCError({ code: "FORBIDDEN" });
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
@@ -1358,7 +1744,11 @@ export const appRouter = router({
     assignments: protectedProcedure
       .input(z.object({ status: assignmentStatus.optional() }).optional())
       .query(async ({ ctx, input }) => {
-        if (!(["ADMIN", "TRAINING_MANAGER", "EVALUATOR"] as const).includes(ctx.user.role))
+        if (
+          !(["ADMIN", "TRAINING_MANAGER", "EVALUATOR"] as const).includes(
+            ctx.user.role
+          )
+        )
           throw new TRPCError({ code: "FORBIDDEN" });
         const db = await getDb();
         if (!db) return [];
@@ -1370,7 +1760,10 @@ export const appRouter = router({
           })
           .from(assignments)
           .innerJoin(trainings, eq(assignments.trainingId, trainings.id))
-          .leftJoin(evaluationSets, eq(assignments.evaluationSetId, evaluationSets.id))
+          .leftJoin(
+            evaluationSets,
+            eq(assignments.evaluationSetId, evaluationSets.id)
+          )
           .where(eq(assignments.evaluatorId, ctx.user.id));
         const now = new Date();
         return own
@@ -1412,9 +1805,20 @@ export const appRouter = router({
                   weight: evaluationSetCriteria.weight,
                 })
                 .from(evaluationSetCriteria)
-                .innerJoin(criteria, eq(evaluationSetCriteria.criterionId, criteria.id))
-                .where(eq(evaluationSetCriteria.evaluationSetId, record.assignment.evaluationSetId))
-                .orderBy(asc(evaluationSetCriteria.sortOrder), asc(evaluationSetCriteria.id))
+                .innerJoin(
+                  criteria,
+                  eq(evaluationSetCriteria.criterionId, criteria.id)
+                )
+                .where(
+                  eq(
+                    evaluationSetCriteria.evaluationSetId,
+                    record.assignment.evaluationSetId
+                  )
+                )
+                .orderBy(
+                  asc(evaluationSetCriteria.sortOrder),
+                  asc(evaluationSetCriteria.id)
+                )
             : Promise.resolve([]),
         ]);
         const responses = responseRows
@@ -1434,7 +1838,12 @@ export const appRouter = router({
               })),
             }
           : null;
-        return { ...record, evaluationSet, evaluation: responseRows ?? null, responses };
+        return {
+          ...record,
+          evaluationSet,
+          evaluation: responseRows ?? null,
+          responses,
+        };
       }),
     saveEvaluation: protectedProcedure
       .input(
@@ -1444,14 +1853,7 @@ export const appRouter = router({
             .array(
               z.object({
                 criterionId: z.number().int().positive(),
-                score: z
-                  .number()
-                  .int()
-                  .refine(
-                    value =>
-                      scoreScale.includes(value as (typeof scoreScale)[number]),
-                    "Puan 1 ile 5 arasında olmalıdır."
-                  ),
+                score: z.number().int(),
                 comment: z.string().max(2000).optional().nullable(),
               })
             )
@@ -1461,7 +1863,11 @@ export const appRouter = router({
         })
       )
       .mutation(async ({ ctx, input }) => {
-        if (!(["ADMIN", "TRAINING_MANAGER", "EVALUATOR"] as const).includes(ctx.user.role))
+        if (
+          !(["ADMIN", "TRAINING_MANAGER", "EVALUATOR"] as const).includes(
+            ctx.user.role
+          )
+        )
           throw new TRPCError({ code: "FORBIDDEN" });
         const db = await getDb();
         if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
@@ -1480,18 +1886,44 @@ export const appRouter = router({
           });
         const assignmentSetId = record.assignment.evaluationSetId ?? null;
         const assignmentSet = assignmentSetId
-          ? (await db.select({ passingScore: evaluationSets.passingScore }).from(evaluationSets).where(eq(evaluationSets.id, assignmentSetId)).limit(1))[0]
+          ? (
+              await db
+                .select({
+                  passingScore: evaluationSets.passingScore,
+                  rubricScale: evaluationSets.rubricScale,
+                })
+                .from(evaluationSets)
+                .where(eq(evaluationSets.id, assignmentSetId))
+                .limit(1)
+            )[0]
           : null;
+        const maxScore = getRubricMaxScore(assignmentSet?.rubricScale ?? null);
+        if (
+          input.responses.some(
+            response => response.score < 1 || response.score > maxScore
+          )
+        ) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: `Puan 1 ile ${maxScore} arasında olmalıdır.`,
+          });
+        }
         const activeCriteria = await db
           .select()
           .from(criteria)
           .where(eq(criteria.isActive, true));
         const setCriteria = assignmentSetId
           ? await db
-              .select({ criterionId: evaluationSetCriteria.criterionId, weight: evaluationSetCriteria.weight })
+              .select({
+                criterionId: evaluationSetCriteria.criterionId,
+                weight: evaluationSetCriteria.weight,
+              })
               .from(evaluationSetCriteria)
               .where(eq(evaluationSetCriteria.evaluationSetId, assignmentSetId))
-              .orderBy(asc(evaluationSetCriteria.sortOrder), asc(evaluationSetCriteria.id))
+              .orderBy(
+                asc(evaluationSetCriteria.sortOrder),
+                asc(evaluationSetCriteria.id)
+              )
           : [];
         const criteriaForEvaluation = setCriteria.length
           ? activeCriteria.filter(criterion =>
@@ -1524,17 +1956,25 @@ export const appRouter = router({
             item => item.criterionId === criterion.id
           );
           const weight =
-            setCriteria.find(item => item.criterionId === criterion.id)?.weight ??
-            100 / Math.max(criteriaForEvaluation.length, 1);
+            setCriteria.find(item => item.criterionId === criterion.id)
+              ?.weight ?? 100 / Math.max(criteriaForEvaluation.length, 1);
           return {
             score: response?.score ?? 0,
             weight,
           };
         });
         const summary = input.complete
-          ? calculateWeightedEvaluationScores(weightedCriteria, Number(assignmentSet?.passingScore ?? 70))
+          ? calculateWeightedEvaluationScores(
+              weightedCriteria,
+              Number(assignmentSet?.passingScore ?? 70),
+              maxScore
+            )
           : null;
-        if (input.complete && summary?.successStatus === "UNSUCCESSFUL" && !input.generalComment?.trim()) {
+        if (
+          input.complete &&
+          summary?.successStatus === "UNSUCCESSFUL" &&
+          !input.generalComment?.trim()
+        ) {
           throw new TRPCError({
             code: "BAD_REQUEST",
             message: "Başarısız değerlendirmelerde genel yorum zorunludur.",
@@ -1542,17 +1982,15 @@ export const appRouter = router({
         }
         let evaluationId = existing?.id;
         if (!evaluationId) {
-          const result = await db
-            .insert(evaluations)
-            .values({
-              assignmentId: input.assignmentId,
-              evaluatorId: ctx.user.id,
-              trainingId: record.assignment.trainingId,
-              status: input.complete ? "COMPLETED" : "DRAFT",
-              generalComment: input.generalComment,
-              ...(summary ?? {}),
-              submittedAt: input.complete ? new Date() : null,
-            });
+          const result = await db.insert(evaluations).values({
+            assignmentId: input.assignmentId,
+            evaluatorId: ctx.user.id,
+            trainingId: record.assignment.trainingId,
+            status: input.complete ? "COMPLETED" : "DRAFT",
+            generalComment: input.generalComment,
+            ...(summary ?? {}),
+            submittedAt: input.complete ? new Date() : null,
+          });
           evaluationId = Number(result.lastInsertRowid ?? 0);
         } else {
           await db
@@ -1575,7 +2013,10 @@ export const appRouter = router({
               comment: response.comment,
             })
             .onConflictDoUpdate({
-              target: [evaluationResponses.evaluationId, evaluationResponses.criterionId],
+              target: [
+                evaluationResponses.evaluationId,
+                evaluationResponses.criterionId,
+              ],
               set: { score: response.score, comment: response.comment },
             });
         await db
