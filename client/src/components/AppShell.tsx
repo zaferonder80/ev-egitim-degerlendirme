@@ -2,7 +2,7 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
-import { Bell, BookOpenCheck, ClipboardCheck, FileBarChart, LayoutDashboard, ListChecks, LogOut, Menu, Settings, ShieldCheck, Users, X } from "lucide-react";
+import { Bell, BookOpenCheck, ClipboardCheck, FileBarChart, FileText, LayoutDashboard, ListChecks, LogOut, Menu, Settings, ShieldCheck, UserRound, Users, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
@@ -31,6 +31,11 @@ const trainingManagerNavigation = [
 const evaluatorNavigation = [
   { label: "Genel Bakış", path: "/evaluator/dashboard", icon: LayoutDashboard },
   { label: "Atamalarım", path: "/evaluator/assignments", icon: ClipboardCheck },
+];
+
+const reportNavigation = [
+  { label: "Eğitim Değerlendirme Raporu", path: "/admin/reports", icon: FileText },
+  { label: "Kullanıcı Bazlı Detaylı Değerlendirme Raporu", path: "/admin/reports/detailed", icon: UserRound },
 ];
 
 export function getAllowedRolesForShell(
@@ -99,7 +104,12 @@ export function AppShell({ children, role }: { children: React.ReactNode; role: 
         </div>
         <nav className="px-3 py-6 space-y-1" aria-label="Ana menü">
           <p className="px-3 pb-2 text-[10px] font-semibold tracking-[0.16em] uppercase text-slate-400">Yönetim</p>
-          {items.map(item => { const active = location === item.path || (item.path !== "/admin/dashboard" && item.path !== "/evaluator/dashboard" && location.startsWith(item.path)); const Icon = item.icon; return <button key={item.path} onClick={() => { setLocation(item.path); setMobileOpen(false); }} className={cn("group flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-colors", active ? "bg-white/12 text-white shadow-inner" : "text-slate-300 hover:bg-white/7 hover:text-white")}><Icon className={cn("h-4 w-4", active ? "text-teal-300" : "text-slate-400 group-hover:text-teal-200")} /><span>{item.label}</span></button>; })}
+          {items.map(item => { const active = location === item.path || (item.path !== "/admin/dashboard" && item.path !== "/evaluator/dashboard" && location.startsWith(item.path)); const Icon = item.icon; return <div key={item.path}>
+            <button onClick={() => { setLocation(item.path); setMobileOpen(false); }} className={cn("group flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-colors", active ? "bg-white/12 text-white shadow-inner" : "text-slate-300 hover:bg-white/7 hover:text-white")}><Icon className={cn("h-4 w-4", active ? "text-teal-300" : "text-slate-400 group-hover:text-teal-200")} /><span>{item.label}</span></button>
+            {item.path === "/admin/reports" && <div className="ml-3 mt-1 space-y-1 border-l border-white/10 pl-3">
+              {reportNavigation.map(report => { const reportActive = location === report.path; const ReportIcon = report.icon; return <button key={report.path} onClick={() => { setLocation(report.path); setMobileOpen(false); }} className={cn("group flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs leading-4 transition-colors", reportActive ? "bg-white/12 text-white shadow-inner" : "text-slate-400 hover:bg-white/7 hover:text-white")}><ReportIcon className={cn("h-3.5 w-3.5 shrink-0", reportActive ? "text-teal-300" : "text-slate-500 group-hover:text-teal-200")} /><span>{report.label}</span></button>; })}
+            </div>}
+          </div>; })}
         </nav>
         {user.role === "ADMIN" && <nav className="mt-auto px-3 pb-4 space-y-1" aria-label="Admin ayarları">
           <p className="px-3 pb-2 text-[10px] font-semibold tracking-[0.16em] uppercase text-slate-400">Admin Ayarları</p>

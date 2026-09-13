@@ -1,10 +1,12 @@
 import { AppShell } from "@/components/AppShell";
 import { Card, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
-import { AlertTriangle, CheckCircle2, ClipboardCheck, GraduationCap, TrendingUp, XCircle } from "lucide-react";
+import { AlertTriangle, CheckCircle2, ClipboardCheck, FileText, GraduationCap, TrendingUp, XCircle } from "lucide-react";
 import { Bar, BarChart, Cell, LabelList, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { useState } from "react";
+import { useLocation } from "wouter";
 
 const metricStyle = ["bg-[#e8f5f4] text-teal-700", "bg-[#eaf1f8] text-[#0b385d]", "bg-[#ecf8f0] text-emerald-700", "bg-[#fff6df] text-amber-700", "bg-[#fff0f1] text-rose-700", "bg-[#eef2ff] text-indigo-700"];
 const metricIcon = [GraduationCap, ClipboardCheck, CheckCircle2, AlertTriangle, CheckCircle2, XCircle];
@@ -50,6 +52,7 @@ function CriteriaTooltip({ active, payload }: { active?: boolean; payload?: Arra
 
 export default function AdminDashboard() {
   const { user } = useAuth();
+  const [, setLocation] = useLocation();
   const [period, setPeriod] = useState<"ALL" | "30_DAYS" | "90_DAYS" | "YEAR">("ALL");
   const [selectedSetId, setSelectedSetId] = useState<number | "">("");
   const [selectedTrainingType, setSelectedTrainingType] = useState<"Ürün" | "Üretim" | "Destek" | "">("");
@@ -82,7 +85,7 @@ export default function AdminDashboard() {
         </CardContent></Card>
         <Card className="border-slate-200 shadow-sm"><CardContent className="p-6"><p className="font-semibold text-[#0b385d]">Başarı dağılımı</p><p className="mt-1 text-sm text-slate-500">Eğitim sonuçlarının durumu</p><div className="h-60"><ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={successPercentageChart} dataKey="value" nameKey="name" innerRadius={65} outerRadius={92} paddingAngle={4} labelLine={false} label={<SuccessPieLabel />}>{successPercentageChart.map((_, index) => <Cell key={index} fill={index === 0 ? "#16a370" : "#e35968"} />)}</Pie><Tooltip formatter={(value: number, _name, item) => [formatPercentage(item.payload.percentage), item.payload.name]} /></PieChart></ResponsiveContainer></div><div className="overflow-hidden rounded-lg border border-slate-100"><table className="w-full text-left text-xs"><thead className="bg-slate-50 text-slate-500"><tr><th className="px-3 py-2 font-semibold">Sonuç</th><th className="px-3 py-2 text-right font-semibold">Adet</th><th className="px-3 py-2 text-right font-semibold">Yüzde</th></tr></thead><tbody>{successPercentageChart.map((point, index) => <tr key={point.name} className="border-t border-slate-100"><td className="px-3 py-2 font-semibold text-[#0b385d]"><span className={`mr-1.5 inline-block h-2 w-2 rounded-full ${index === 0 ? "bg-emerald-600" : "bg-rose-500"}`} />{point.name}</td><td className="px-3 py-2 text-right text-slate-600">{point.value}</td><td className="px-3 py-2 text-right font-semibold text-teal-700">{formatPercentage(point.percentage)}</td></tr>)}</tbody></table></div></CardContent></Card>
       </div>
-      <Card className="mt-6 border-slate-200 shadow-sm"><CardContent className="p-6"><div className="flex items-center gap-3"><div className="grid h-10 w-10 place-items-center rounded-xl bg-teal-50 text-teal-700"><TrendingUp className="h-5 w-5" /></div><div><p className="font-semibold text-[#0b385d]">Değerlendirici tamamlanma oranları</p><p className="text-sm text-slate-500">Atama sayısına göre tamamlanan değerlendirmeler</p></div></div><div className="mt-5 grid gap-4 md:grid-cols-3">{(query.data?.charts.evaluators ?? []).map(item => <div key={item.name} className="rounded-xl bg-slate-50 p-4"><div className="flex justify-between text-sm"><span className="font-medium text-slate-700">{item.name}</span><span className="font-semibold text-teal-700">{item.completedCount}/{item.assignedCount} · {item.completionRate.toFixed(0)}%</span></div><div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-200"><div className="h-full rounded-full bg-teal-500" style={{ width: `${item.completionRate}%` }} /></div></div>)}</div></CardContent></Card>
+      <Card className="mt-6 border-slate-200 shadow-sm"><CardContent className="p-6"><div className="flex flex-wrap items-center justify-between gap-3"><div className="flex items-center gap-3"><div className="grid h-10 w-10 place-items-center rounded-xl bg-teal-50 text-teal-700"><TrendingUp className="h-5 w-5" /></div><div><p className="font-semibold text-[#0b385d]">Değerlendirici tamamlanma oranları</p><p className="text-sm text-slate-500">Atama sayısına göre tamamlanan değerlendirmeler</p></div></div><Button type="button" variant="outline" className="border-slate-200 bg-white text-slate-700 hover:bg-slate-50 hover:text-teal-700 gap-2 shadow-sm font-medium" onClick={() => setLocation("/admin/reports/detailed")}><FileText className="h-4 w-4 text-teal-600" />Detaylı Rapor</Button></div><div className="mt-5 grid gap-4 md:grid-cols-3">{(query.data?.charts.evaluators ?? []).map(item => <div key={item.name} className="rounded-xl bg-slate-50 p-4"><div className="flex justify-between text-sm"><span className="font-medium text-slate-700">{item.name}</span><span className="font-semibold text-teal-700">{item.completedCount}/{item.assignedCount} · {item.completionRate.toFixed(0)}%</span></div><div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-200"><div className="h-full rounded-full bg-teal-500" style={{ width: `${item.completionRate}%` }} /></div></div>)}</div></CardContent></Card>
     </>}
   </AppShell>;
 }

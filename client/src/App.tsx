@@ -10,6 +10,7 @@ import AdminUsers from "@/pages/AdminUsers";
 import ChangePassword from "@/pages/ChangePassword";
 import Login from "@/pages/Login";
 import AdminReports from "@/pages/AdminReports";
+import AdminDetailedReport from "@/pages/AdminDetailedReport";
 import Profile from "@/pages/Profile";
 import EvaluatorAssignments from "@/pages/EvaluatorAssignments";
 import EvaluatorDashboard from "@/pages/EvaluatorDashboard";
@@ -33,6 +34,7 @@ function Router() {
       <Route path={"/admin/criteria"} component={AdminCriteria} />
       <Route path={"/admin/evaluation-sets"} component={AdminEvaluationSets} />
       <Route path={"/admin/users"} component={AdminUsers} />
+      <Route path={"/admin/reports/detailed"} component={AdminDetailedReport} />
       <Route path={"/admin/reports"} component={AdminReports} />
       <Route path={"/admin/reports/preview"} component={PdfPreview} />
       <Route path={"/admin/audit-logs"} component={AdminAuditLogs} />

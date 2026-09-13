@@ -1,6 +1,7 @@
 import { TRPCError } from "@trpc/server";
 import bcrypt from "bcryptjs";
 import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
+import { alias } from "drizzle-orm/sqlite-core";
 import { nanoid } from "nanoid";
 import { z } from "zod";
 import {
@@ -1257,6 +1258,63 @@ export const appRouter = router({
                   : ("UNSUCCESSFUL" as const),
           };
         });
+      }),
+      detailedList: trainingManagerProcedure.query(async () => {
+        const db = await getDb();
+        if (!db) return [];
+        const evaluatorUser = alias(users, "evaluatorUser");
+        const assignerUser = alias(users, "assignerUser");
+
+        const rows = await db
+          .select({
+            assignment: assignments,
+            training: trainings,
+            evaluationSet: evaluationSets,
+            evaluator: evaluatorUser,
+            assignedBy: assignerUser,
+            evaluation: evaluations,
+          })
+          .from(assignments)
+          .innerJoin(trainings, eq(assignments.trainingId, trainings.id))
+          .leftJoin(
+            evaluationSets,
+            eq(assignments.evaluationSetId, evaluationSets.id)
+          )
+          .innerJoin(evaluatorUser, eq(assignments.evaluatorId, evaluatorUser.id))
+          .innerJoin(assignerUser, eq(assignments.assignedById, assignerUser.id))
+          .leftJoin(evaluations, eq(evaluations.assignmentId, assignments.id))
+          .orderBy(desc(assignments.assignedAt));
+
+        return rows.map(row => ({
+          assignmentId: row.assignment.id,
+          assignedAt: row.assignment.assignedAt,
+          dueDate: row.assignment.dueDate,
+          completedAt: row.assignment.completedAt,
+          status: row.assignment.status,
+          trainingId: row.training.id,
+          trainingTitle: row.training.title,
+          trainingCode: row.training.code,
+          trainingType: row.training.trainingType ?? "Belirtilmemiş",
+          contentOwner: row.training.contentOwner ?? "Belirtilmemiş",
+          trainingStatus: row.training.status,
+          evaluationSetId: row.assignment.evaluationSetId,
+          evaluationSetName: row.evaluationSet?.name ?? "Set Belirtilmemiş",
+          assignedById: row.assignedBy.id,
+          assignedByName: row.assignedBy.name ?? `${row.assignedBy.firstName} ${row.assignedBy.lastName}`,
+          assignedByEmail: row.assignedBy.email,
+          evaluatorId: row.evaluator.id,
+          evaluatorName: row.evaluator.name ?? `${row.evaluator.firstName} ${row.evaluator.lastName}`,
+          evaluatorEmail: row.evaluator.email,
+          evaluatorIsActive: row.evaluator.isActive,
+          evaluationId: row.evaluation?.id ?? null,
+          evaluationStatus: row.evaluation?.status ?? null,
+          totalScore: row.evaluation?.totalScore ?? null,
+          averageScore: row.evaluation?.averageScore ?? null,
+          successPercentage: row.evaluation?.successPercentage ?? null,
+          successStatus: row.evaluation?.successStatus ?? null,
+          generalComment: row.evaluation?.generalComment ?? null,
+          submittedAt: row.evaluation?.submittedAt ?? null,
+        }));
       }),
     }),
     trainings: router({

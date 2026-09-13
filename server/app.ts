@@ -6,7 +6,7 @@ import { appRouter } from "./routers";
 import { createContext } from "./_core/context";
 import { getSessionUser } from "./auth";
 import { buildTrainingEvaluationPdf } from "./reportPdf";
-import { buildTrainingEvaluationExcel } from "./reportExcel";
+import { buildTrainingEvaluationExcel, buildDetailedReportExcel } from "./reportExcel";
 import { createThreeDayDueReminders } from "./dueReminders";
 import { sdk } from "./_core/sdk";
 
@@ -51,6 +51,32 @@ app.get("/api/reports/training/:id.xlsx", async (req, res) => {
     return res.send(excel);
   } catch (error) {
     console.error("[Reports] Excel generation failed", error);
+    return res.status(500).json({ error: "report-generation-failed" });
+  }
+});
+
+app.get("/api/reports/detailed.xlsx", async (req, res) => {
+  try {
+    const user = await getSessionUser(req);
+    if (!user || !["ADMIN", "TRAINING_MANAGER"].includes(user.role)) return res.status(403).json({ error: "forbidden" });
+    const filters = {
+      search: req.query.search ? String(req.query.search) : undefined,
+      trainingType: req.query.trainingType ? String(req.query.trainingType) : undefined,
+      trainingId: req.query.trainingId ? Number(req.query.trainingId) : undefined,
+      evaluationSetId: req.query.evaluationSetId ? Number(req.query.evaluationSetId) : undefined,
+      assignedById: req.query.assignedById ? Number(req.query.assignedById) : undefined,
+      evaluatorId: req.query.evaluatorId ? Number(req.query.evaluatorId) : undefined,
+      status: req.query.status ? String(req.query.status) : undefined,
+      successStatus: req.query.successStatus ? String(req.query.successStatus) : undefined,
+      isActive: req.query.isActive ? String(req.query.isActive) : undefined,
+    };
+    const excel = await buildDetailedReportExcel(filters);
+    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    res.setHeader("Content-Disposition", `attachment; filename="detayli-degerlendirme-raporu.xlsx"`);
+    res.setHeader("Content-Length", excel.length);
+    return res.send(excel);
+  } catch (error) {
+    console.error("[Reports] Detailed Excel generation failed", error);
     return res.status(500).json({ error: "report-generation-failed" });
   }
 });

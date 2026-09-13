@@ -6,8 +6,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { formatScoreValue } from "@shared/score";
 import { Card, CardContent } from "@/components/ui/card";
 import { trpc } from "@/lib/trpc";
-import { Download, FileBarChart, FileSpreadsheet, Filter, Loader2, RotateCcw, Search } from "lucide-react";
+import { Download, FileBarChart, FileSpreadsheet, FileText, Filter, Loader2, RotateCcw, Search } from "lucide-react";
 import { useState } from "react";
+import { useLocation } from "wouter";
 import { toast } from "sonner";
 
 function getSessionHeaders(): Record<string, string> {
@@ -16,6 +17,7 @@ function getSessionHeaders(): Record<string, string> {
 }
 
 export default function AdminReports() {
+  const [, setLocation] = useLocation();
   const query = trpc.admin.reports.list.useQuery();
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
@@ -125,14 +127,26 @@ export default function AdminReports() {
 
   return (
     <AppShell role={appRole}>
-      <div>
-        <p className="text-sm font-medium text-teal-700">Kurumsal raporlama</p>
-        <h1 className="mt-1 text-3xl font-semibold tracking-tight text-[#0b385d]">
-          Değerlendirme raporları
-        </h1>
-        <p className="mt-2 text-sm text-slate-500">
-          Tamamlanan değerlendirmeleri PDF veya Excel dosyası olarak indirin.
-        </p>
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <p className="text-sm font-medium text-teal-700">Kurumsal raporlama</p>
+          <h1 className="mt-1 text-3xl font-semibold tracking-tight text-[#0b385d]">
+            Değerlendirme raporları
+          </h1>
+          <p className="mt-2 text-sm text-slate-500">
+            Tamamlanan değerlendirmeleri PDF veya Excel dosyası olarak indirin.
+          </p>
+        </div>
+        <div>
+          <Button
+            type="button"
+            className="bg-[#0b385d] hover:bg-[#082743] text-white gap-2 shadow-sm font-medium"
+            onClick={() => setLocation("/admin/reports/detailed")}
+          >
+            <FileText className="h-4 w-4 text-teal-400" />
+            Detaylı Rapor Sayfası
+          </Button>
+        </div>
       </div>
 
       <div className="mt-7 rounded-xl border border-slate-200 bg-white shadow-sm">
